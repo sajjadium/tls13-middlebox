@@ -25,275 +25,178 @@ function get_runtime_info() {
 }
 
 function getError(xhr) {
-    let error_ = {};
+    let result = {};
 
-    error_.error_code = xhr.channel.QueryInterface(Ci.nsIRequest).status;
+    result.errorCode = xhr.channel.QueryInterface(Ci.nsIRequest).status;
 
-    if ((error_.error_code & 0xff0000) === 0x5a0000) {
+    if ((result.errorCode & 0xff0000) === 0x5a0000) {
         let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1'].getService(Ci.nsINSSErrorsService);
 
         try {
-            let error_class = nssErrorsService.getErrorClass(error_.error_code);
+            result.errorClass = nssErrorsService.getErrorClass(result.errorCode);
 
-            if (error_class === Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
-                error_.error_class = 'CERTIFICATE';
+            if (result.errorClass === Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
+                result.errorClassDesc = 'CERTIFICATE';
             } else {
-                error_.error_class = 'PROTOCOL';
+                result.errorClassDesc = 'PROTOCOL';
             }
         } catch (ex) {
-            error_.error_class = 'PROTOCOL';
+            result.errorClass = null;
+            result.errorClassDesc = 'PROTOCOL';
         }
 
         // NSS_SEC errors (happen below the base value because of negative vals)
-        if ((error_.error_code & 0xffff) < Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE)) {
+        if ((result.errorCode & 0xffff) < Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE)) {
             // The bases are actually negative, so in our positive numeric space, we
             // need to subtract the base off our value.
-            let nssErr = Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE) - (error_.error_code & 0xffff);
+            let nssErr = Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE) - (result.errorCode & 0xffff);
 
             switch (nssErr) {
                 case 11: // SEC_ERROR_EXPIRED_CERTIFICATE, sec(11)
-                    error_.error_message = 'SEC_ERROR_EXPIRED_CERTIFICATE';
+                    result.errorCodeDesc = 'SEC_ERROR_EXPIRED_CERTIFICATE';
                     break;
                 case 12: // SEC_ERROR_REVOKED_CERTIFICATE, sec(12)
-                    error_.error_message = 'SEC_ERROR_REVOKED_CERTIFICATE';
+                    result.errorCodeDesc = 'SEC_ERROR_REVOKED_CERTIFICATE';
                     break;
                 case 13: // SEC_ERROR_UNKNOWN_ISSUER, sec(13)
-                    error_.error_message = 'SEC_ERROR_UNKNOWN_ISSUER';
+                    result.errorCodeDesc = 'SEC_ERROR_UNKNOWN_ISSUER';
                     break;
                 case 20: // SEC_ERROR_UNTRUSTED_ISSUER, sec(20)
-                    error_.error_message = 'SEC_ERROR_UNTRUSTED_ISSUER';
+                    result.errorCodeDesc = 'SEC_ERROR_UNTRUSTED_ISSUER';
                     break;
                 case 21: // SEC_ERROR_UNTRUSTED_CERT, sec(21)
-                    error_.error_message = 'SEC_ERROR_UNTRUSTED_CERT';
+                    result.errorCodeDesc = 'SEC_ERROR_UNTRUSTED_CERT';
                     break;
                 case 36: // SEC_ERROR_CA_CERT_INVALID, sec(36)
-                    error_.error_message = 'SEC_ERROR_CA_CERT_INVALID';
+                    result.errorCodeDesc = 'SEC_ERROR_CA_CERT_INVALID';
                     break;
                 case 90: // SEC_ERROR_INADEQUATE_KEY_USAGE, sec(90)
-                    error_.error_message = 'SEC_ERROR_INADEQUATE_KEY_USAGE';
+                    result.errorCodeDesc = 'SEC_ERROR_INADEQUATE_KEY_USAGE';
                     break;
                 case 176: // SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED, sec(176)
-                    error_.error_message = 'SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED';
+                    result.errorCodeDesc = 'SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED';
                     break;
                 default:
-                    error_.error_message = 'SEC_ERROR_OTHER';
+                    result.errorCodeDesc = 'SEC_ERROR_OTHER';
                     break;
             }
         } else {
-            let sslErr = Math.abs(Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE) - (error_.error_code & 0xffff);
+            let sslErr = Math.abs(Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE) - (result.errorCode & 0xffff);
 
             switch (sslErr) {
                 case 3: // SSL_ERROR_NO_CERTIFICATE, ssl(3)
-                    error_.error_message = 'SSL_ERROR_NO_CERTIFICATE';
+                    result.errorCodeDesc = 'SSL_ERROR_NO_CERTIFICATE';
                     break;
                 case 4: // SSL_ERROR_BAD_CERTIFICATE, ssl(4)
-                    error_.error_message = 'SSL_ERROR_BAD_CERTIFICATE';
+                    result.errorCodeDesc = 'SSL_ERROR_BAD_CERTIFICATE';
                     break;
                 case 8: // SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE, ssl(8)
-                    error_.error_message = 'SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE';
+                    result.errorCodeDesc = 'SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE';
                     break;
                 case 9: // SSL_ERROR_UNSUPPORTED_VERSION, ssl(9)
-                    error_.error_message = 'SSL_ERROR_UNSUPPORTED_VERSION';
+                    result.errorCodeDesc = 'SSL_ERROR_UNSUPPORTED_VERSION';
                     break;
                 case 12: // SSL_ERROR_BAD_CERT_DOMAIN, ssl(12)
-                    error_.error_message = 'SSL_ERROR_BAD_CERT_DOMAIN';
+                    result.errorCodeDesc = 'SSL_ERROR_BAD_CERT_DOMAIN';
                     break;
                 default:
-                    error_.error_message = 'SSL_ERROR_OTHER';
+                    result.errorCodeDesc = 'SSL_ERROR_OTHER';
                     break;
             }
         }
     } else {
-        error_.error_class = 'NETWORK';
+        result.errorClassDesc = 'NETWORK';
 
-        switch (error_.error_code) {
+        switch (result.errorCode) {
             // connect to host:port failed
             case 0x804B000C: // NS_ERROR_CONNECTION_REFUSED, network(13)
-                error_.error_message = 'NS_ERROR_CONNECTION_REFUSED';
+                result.errorCodeDesc = 'NS_ERROR_CONNECTION_REFUSED';
                 break;
             // network timeout error
             case 0x804B000E: // NS_ERROR_NET_TIMEOUT, network(14)
-                error_.error_message = 'NS_ERROR_NET_TIMEOUT';
+                result.errorCodeDesc = 'NS_ERROR_NET_TIMEOUT';
                 break;
             // hostname lookup failed
             case 0x804B001E: // NS_ERROR_UNKNOWN_HOST, network(30)
-                error_.error_message = 'NS_ERROR_UNKNOWN_HOST';
+                result.errorCodeDesc = 'NS_ERROR_UNKNOWN_HOST';
                 break;
             case 0x804B0047: // NS_ERROR_NET_INTERRUPT, network(71)
-                error_.error_message = 'NS_ERROR_NET_INTERRUPT';
+                result.errorCodeDesc = 'NS_ERROR_NET_INTERRUPT';
                 break;
             default:
-                error_.error_message = 'NS_ERROR_OTHER';
+                result.errorCodeDesc = 'NS_ERROR_OTHER';
                 break;
         }
     }
 
-    return error_;
+    try {
+        let secInfo = xhr.channel.securityInfo;
+
+        if (secInfo instanceof Ci.nsITransportSecurityInfo) {
+            secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+
+            result.securityState = secInfo.securityState;
+
+            if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_SECURE) === Ci.nsIWebProgressListener.STATE_IS_SECURE) {
+                result.securityStateDesc = "STATE_IS_SECURE";
+            } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_INSECURE) === Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
+                result.securityStateDesc = "STATE_IS_INSECURE";
+            } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) === Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
+                result.securityStateDesc = "STATE_IS_BROKEN";
+                result.shortSecurityDescription = secInfo.shortSecurityDescription;
+                result.errorMessage = secInfo.errorMessage;
+            }
+        }
+
+        if (secInfo instanceof Ci.nsISSLStatusProvider) {
+            var cert = secInfo.QueryInterface(Ci.nsISSLStatusProvider).SSLStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
+
+            result.cert = {};
+
+            result.cert.commonName = cert.commonName;
+            result.cert.issuerOrganization = cert.issuerOrganization;
+            result.cert.organization = cert.organization;
+            result.cert.sha1Fingerprint = cert.sha1Fingerprint;
+
+            result.cert.validity = {};
+            var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
+            result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
+            result.cert.validity.notAfterGMT = validity.notAfterGMT;
+        }
+    } catch(err) {
+        result.exception = err.message;
+    }
+
+    return result;
 }
-
-function dumpSecurityInfo(xhr, error) {
-  let channel = xhr.channel;
- 
-  try {
-    dump("Connection error_.error_code:\n");
-
-    if (!error) {
-      dump("\tsucceeded\n");
-    } else {
-      dump("\tfailed: " + error.name + "\n");
-    }
- 
-    let secInfo = channel.securityInfo;
-
-    // Print general connection security state
-    dump("Security Information:\n");
-
-    if (secInfo instanceof Ci.nsITransportSecurityInfo) {
-      secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-      dump("\tSecurity state of connection: ");
-
-      // Check security state flags
-      if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_SECURE)
-           == Ci.nsIWebProgressListener.STATE_IS_SECURE) {
-        dump("secure connection\n");
-      } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_INSECURE)
-                  == Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
-        dump("insecure connection\n");
-      } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_BROKEN)
-                  == Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
-        dump("unknown\n");
-        dump("\tSecurity description: " + secInfo.shortSecurityDescription + "\n");
-        dump("\tSecurity error message: " + secInfo.errorMessage + "\n");
-      }
-    } else {
-      dump("\tNo security info available for this channel\n");
-    }
-
-    // Print SSL certificate details
-    if (secInfo instanceof Ci.nsISSLerror_.error_codeProvider) {
-      var cert = secInfo.QueryInterface(Ci.nsISSLerror_.error_codeProvider)
-                        .SSLerror_.error_code.QueryInterface(Ci.nsISSLerror_.error_code).serverCert;
-            
-      dump("\tCommon name (CN) = " + cert.commonName + "\n");
-      dump("\tIssuer = " + cert.issuerOrganization + "\n");
-      dump("\tOrganisation = " + cert.organization + "\n");  
-      dump("\tSHA1 fingerprint = " + cert.sha1Fingerprint + "\n");
-       
-      var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
-      dump("\tValid from " + validity.notBeforeGMT + "\n");
-      dump("\tValid until " + validity.notAfterGMT + "\n");
-    }
-  } catch(err) {
-    alert(err);
-  }
-}
-
-// function collect_request_info(xhr) {
-//     // Much of this is documented in https://developer.mozilla.org/en-US/docs/Web/API/
-//     // XMLHttpRequest/How_to_check_the_secruity_state_of_an_XMLHTTPRequest_over_SSL
-//     let info = {};
-//     info.error_.error_code = xhr.channel.QueryInterface(Ci.nsIRequest).error_.error_code;
-//     info.original_uri = xhr.channel.originalURI.asciiSpec;
-//     info.uri = xhr.channel.URI.asciiSpec;
-//     info.error_ = getError(xhr);
-
-//     try {
-//         info.error_class = nssErrorsService.getErrorClass(info.error_.error_code);
-//     } catch (e) {
-//         info.error_class = null;
-//     }
-
-//     info.security_info_error_.error_code = false;
-//     info.transport_security_info_error_.error_code = false;
-//     info.ssl_error_.error_code_error_.error_code = false;
-
-//     // Try to query security info
-//     let sec_info = xhr.channel.securityInfo;
-//     if (sec_info == null) return info;
-//     info.security_info_error_.error_code = true;
-
-//     if (sec_info instanceof Ci.nsITransportSecurityInfo) {
-//         sec_info.QueryInterface(Ci.nsITransportSecurityInfo);
-//         info.transport_security_info_error_.error_code = true;
-//         info.security_state = sec_info.securityState;
-//         info.security_description = sec_info.shortSecurityDescription;
-//         info.raw_error = sec_info.errorMessage;
-//     }
-
-//     if (sec_info instanceof Ci.nsISSLerror_.error_codeProvider) {
-//         info.ssl_error_.error_code_error_.error_code = false;
-//         let ssl_error_.error_code = sec_info.QueryInterface(Ci.nsISSLerror_.error_codeProvider).SSLerror_.error_code;
-//         if (ssl_error_.error_code != null) {
-//             info.ssl_error_.error_code_error_.error_code = true;
-//             info.ssl_error_.error_code = ssl_error_.error_code.QueryInterface(Ci.nsISSLerror_.error_code);
-//             // TODO: Find way to extract this py-side.
-//             try {
-//                 let usages = {};
-//                 let usages_string = {};
-//                 info.ssl_error_.error_code.server_cert.getUsagesString(true, usages, usages_string);
-//                 info.certified_usages = usages_string.value;
-//             } catch (e) {
-//                 info.certified_usages = null;
-//             }
-//         }
-//     }
-
-//     if (info.ssl_error_.error_code_error_.error_code) {
-//         let server_cert = info.ssl_error_.error_code.serverCert;
-//         let cert_chain = [];
-//         if (server_cert.sha1Fingerprint) {
-//             cert_chain.push(server_cert.getRawDER({}));
-//             let chain = server_cert.getChain().enumerate();
-//             while (chain.hasMoreElements()) {
-//                 let child_cert = chain.getNext().QueryInterface(Ci.nsISupports)
-//                     .QueryInterface(Ci.nsIX509Cert);
-//                 cert_chain.push(child_cert.getRawDER({}));
-//             }
-//         }
-//         info.certificate_chain_length = cert_chain.length;
-//         info.certificate_chain = cert_chain;
-//     }
-
-//     if (info.ssl_error_.error_code_error_.error_code) {
-//         // Some values might be missing from the connection state, for example due
-//         // to a broken SSL handshake. Try to catch exceptions before report_result's
-//         // JSON serializing does.
-//         let sane_ssl_error_.error_code = {};
-//         info.ssl_error_.error_code_errors = [];
-//         for (let key in info.ssl_error_.error_code) {
-//             if (!info.ssl_error_.error_code.hasOwnProperty(key)) continue;
-//             try {
-//                 sane_ssl_error_.error_code[key] = info.ssl_error_.error_code[key];
-//                 // sane_ssl_error_.error_code[key] = nativeJSON.decode(nativeJSON.encode(info.ssl_error_.error_code[key]));
-//             } catch (e) {
-//                 sane_ssl_error_.error_code[key] = null;
-//                 info.ssl_error_.error_code_errors.push({key: e.toString()});
-//             }
-//         }
-//         info.ssl_error_.error_code = sane_ssl_error_.error_code;
-//     }
-
-//     return info;
-// }
 
 function check_tls(version) {
   return new Promise(function(resolve, reject) {
     // Services.prefs.setIntPref("security.tls.version.max", version);
+    // Services.prefs.setIntPref("security.tls.version.fallback-limit", version);
 
     function load_handler(msg) {
-      resolve({origin: "load_handler", info: getError(msg.target)});
+        let result = getError(msg.target);
+        result.origin = "load";
+        resolve(result);
     }
 
     function error_handler(msg) {
-      resolve({origin: "error_handler", info: getError(msg.target)});
+        let result = getError(msg.target);
+        result.origin = "error";
+        resolve(result);
     }
 
     function abort_handler(msg) {
-      resolve({origin: "abort_handler", info: getError(msg.target)});
+        let result = getError(msg.target);
+        result.origin = "abort";
+        resolve(result);
     }
 
     function timeout_handler(msg) {
-      resolve({origin: "timeout_handler", info: getError(msg.target)});
+        let result = getError(msg.target);
+        result.origin = "timeout";
+        resolve(result);
     }
 
     let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
@@ -311,8 +214,10 @@ function check_tls(version) {
         request.addEventListener("abort", abort_handler, false);
         request.addEventListener("timeout", timeout_handler, false);
         request.send(null);
-    } catch (error) {
-        resolve({origin: "request_error", error: error, info: getError(request)});
+    } catch (err) {
+        let result = getError(request);
+        result.error = err.message;
+        resolve(result);
     }
   });
 }
@@ -322,14 +227,14 @@ function startup() {}
 function shutdown() {}
 
 function install() {
-  check_tls(4).then(function(result4) {
-    check_tls(3).then(function(result3) {
-      // console.log("4: " + nativeJSON.stringify(result4));
-      // console.log("3: " + nativeJSON.stringify(result3));
-      console.log("4:", (result4));
-      console.log("3:", (result3));
-    })
-  });
+    check_tls(4).then(function(result4) {
+        check_tls(3).then(function(result3) {
+            // console.log("4: " + nativeJSON.stringify(result4));
+            // console.log("3: " + nativeJSON.stringify(result3));
+            console.log("4:", (result4));
+            console.log("3:", (result3));
+        });
+    });
 }
 
 function uninstall() {}
