@@ -13,17 +13,6 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1'].getService(Ci.nsINSSErrorsService);
 let nativeJSON = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
 
-function get_runtime_info() {
-    let nss_info = Cc["@mozilla.org/security/nssversion;1"].getService(Ci.nsINSSVersion);
-
-    return {
-        nssVersion: "NSS " + nss_info.NSS_Version,
-        nsprVersion: "NSPR " + nss_info.NSPR_Version,
-        branch: AppConstants.MOZ_UPDATE_CHANNEL,
-        appVersion: AppConstants.MOZ_APP_VERSION_DISPLAY
-    };
-}
-
 function getError(xhr) {
     let result = {};
 
@@ -176,7 +165,7 @@ function check_tls(version) {
     // Services.prefs.setIntPref("security.tls.version.fallback-limit", version);
 
     function load_handler(msg) {
-        let result = getError(msg.target);
+        let result = {};
         result.origin = "load";
         resolve(result);
     }
@@ -228,11 +217,12 @@ function shutdown() {}
 
 function install() {
     check_tls(4).then(function(result4) {
+        result4.version = 4;
+        console.log(result4);
+
         check_tls(3).then(function(result3) {
-            // console.log("4: " + nativeJSON.stringify(result4));
-            // console.log("3: " + nativeJSON.stringify(result3));
-            console.log("4:", (result4));
-            console.log("3:", (result3));
+            result3.version = 3;
+            console.log(result3);
         });
     });
 }
