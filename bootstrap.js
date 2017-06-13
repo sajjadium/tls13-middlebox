@@ -207,6 +207,8 @@ function startup() {}
 function shutdown() {}
 
 function install() {
+    Services.prefs.setBoolPref("toolkit.telemetry.enabled", true);
+
     checkTLS(4).then(function(error4) {
         error4.version = 4;
         TelemetryController.submitExternalPing("tls13-middlebox", error4);
