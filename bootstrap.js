@@ -137,19 +137,23 @@ function getError(xhr) {
         }
 
         if (secInfo instanceof Ci.nsISSLStatusProvider) {
-            var cert = secInfo.QueryInterface(Ci.nsISSLStatusProvider).SSLStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
+            let sslStatus = secInfo.QueryInterface(Ci.nsISSLStatusProvider).SSLStatus;
 
-            result.cert = {};
+            if (sslStatus) {
+                let cert = sslStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
 
-            result.cert.commonName = cert.commonName;
-            result.cert.issuerOrganization = cert.issuerOrganization;
-            result.cert.organization = cert.organization;
-            result.cert.sha1Fingerprint = cert.sha1Fingerprint;
+                result.cert = {};
 
-            result.cert.validity = {};
-            var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
-            result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
-            result.cert.validity.notAfterGMT = validity.notAfterGMT;
+                result.cert.commonName = cert.commonName;
+                result.cert.issuerOrganization = cert.issuerOrganization;
+                result.cert.organization = cert.organization;
+                result.cert.sha1Fingerprint = cert.sha1Fingerprint;
+
+                result.cert.validity = {};
+                var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
+                result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
+                result.cert.validity.notAfterGMT = validity.notAfterGMT;
+            }
         }
     } catch(err) {
         result.exception = err.message;
@@ -166,7 +170,7 @@ function checkTLS(version) {
     try {
         let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-        request.open("GET", "https://disabled.tls13.com/", true);
+        request.open("GET", "https://localhost:8888/", true);
 
         request.timeout = 10000;
 
