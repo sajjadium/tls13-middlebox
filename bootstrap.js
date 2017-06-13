@@ -16,109 +16,108 @@ let nativeJSON = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
 function getError(xhr) {
     let result = {};
 
-    result.errorCode = xhr.channel.QueryInterface(Ci.nsIRequest).status;
+    try {
+        result.errorCode = xhr.channel.QueryInterface(Ci.nsIRequest).status;
 
-    if ((result.errorCode & 0xff0000) === 0x5a0000) {
-        let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1'].getService(Ci.nsINSSErrorsService);
+        if ((result.errorCode & 0xff0000) === 0x5a0000) {
+            let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1'].getService(Ci.nsINSSErrorsService);
 
-        try {
-            result.errorClass = nssErrorsService.getErrorClass(result.errorCode);
+            try {
+                let errorClass = nssErrorsService.getErrorClass(result.errorCode);
 
-            if (result.errorClass === Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
-                result.errorClassDesc = 'CERTIFICATE';
-            } else {
-                result.errorClassDesc = 'PROTOCOL';
+                if (errorClass === Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
+                    result.errorClass = 'CERTIFICATE';
+                } else {
+                    result.errorClass = 'PROTOCOL';
+                }
+            } catch (ex) {
+                result.errorClass = 'PROTOCOL';
             }
-        } catch (ex) {
-            result.errorClass = null;
-            result.errorClassDesc = 'PROTOCOL';
-        }
 
-        // NSS_SEC errors (happen below the base value because of negative vals)
-        if ((result.errorCode & 0xffff) < Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE)) {
-            // The bases are actually negative, so in our positive numeric space, we
-            // need to subtract the base off our value.
-            let nssErr = Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE) - (result.errorCode & 0xffff);
+            // NSS_SEC errors (happen below the base value because of negative vals)
+            if ((result.errorCode & 0xffff) < Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE)) {
+                // The bases are actually negative, so in our positive numeric space, we
+                // need to subtract the base off our value.
+                let nssErr = Math.abs(Ci.nsINSSErrorsService.NSS_SEC_ERROR_BASE) - (result.errorCode & 0xffff);
 
-            switch (nssErr) {
-                case 11: // SEC_ERROR_EXPIRED_CERTIFICATE, sec(11)
-                    result.errorCodeDesc = 'SEC_ERROR_EXPIRED_CERTIFICATE';
-                    break;
-                case 12: // SEC_ERROR_REVOKED_CERTIFICATE, sec(12)
-                    result.errorCodeDesc = 'SEC_ERROR_REVOKED_CERTIFICATE';
-                    break;
-                case 13: // SEC_ERROR_UNKNOWN_ISSUER, sec(13)
-                    result.errorCodeDesc = 'SEC_ERROR_UNKNOWN_ISSUER';
-                    break;
-                case 20: // SEC_ERROR_UNTRUSTED_ISSUER, sec(20)
-                    result.errorCodeDesc = 'SEC_ERROR_UNTRUSTED_ISSUER';
-                    break;
-                case 21: // SEC_ERROR_UNTRUSTED_CERT, sec(21)
-                    result.errorCodeDesc = 'SEC_ERROR_UNTRUSTED_CERT';
-                    break;
-                case 36: // SEC_ERROR_CA_CERT_INVALID, sec(36)
-                    result.errorCodeDesc = 'SEC_ERROR_CA_CERT_INVALID';
-                    break;
-                case 90: // SEC_ERROR_INADEQUATE_KEY_USAGE, sec(90)
-                    result.errorCodeDesc = 'SEC_ERROR_INADEQUATE_KEY_USAGE';
-                    break;
-                case 176: // SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED, sec(176)
-                    result.errorCodeDesc = 'SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED';
-                    break;
-                default:
-                    result.errorCodeDesc = 'SEC_ERROR_OTHER';
-                    break;
+                switch (nssErr) {
+                    case 11: // SEC_ERROR_EXPIRED_CERTIFICATE, sec(11)
+                        result.errorMessage = 'SEC_ERROR_EXPIRED_CERTIFICATE';
+                        break;
+                    case 12: // SEC_ERROR_REVOKED_CERTIFICATE, sec(12)
+                        result.errorMessage = 'SEC_ERROR_REVOKED_CERTIFICATE';
+                        break;
+                    case 13: // SEC_ERROR_UNKNOWN_ISSUER, sec(13)
+                        result.errorMessage = 'SEC_ERROR_UNKNOWN_ISSUER';
+                        break;
+                    case 20: // SEC_ERROR_UNTRUSTED_ISSUER, sec(20)
+                        result.errorMessage = 'SEC_ERROR_UNTRUSTED_ISSUER';
+                        break;
+                    case 21: // SEC_ERROR_UNTRUSTED_CERT, sec(21)
+                        result.errorMessage = 'SEC_ERROR_UNTRUSTED_CERT';
+                        break;
+                    case 36: // SEC_ERROR_CA_CERT_INVALID, sec(36)
+                        result.errorMessage = 'SEC_ERROR_CA_CERT_INVALID';
+                        break;
+                    case 90: // SEC_ERROR_INADEQUATE_KEY_USAGE, sec(90)
+                        result.errorMessage = 'SEC_ERROR_INADEQUATE_KEY_USAGE';
+                        break;
+                    case 176: // SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED, sec(176)
+                        result.errorMessage = 'SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED';
+                        break;
+                    default:
+                        result.errorMessage = 'SEC_ERROR_OTHER';
+                        break;
+                }
+            } else {
+                let sslErr = Math.abs(Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE) - (result.errorCode & 0xffff);
+
+                switch (sslErr) {
+                    case 3: // SSL_ERROR_NO_CERTIFICATE, ssl(3)
+                        result.errorMessage = 'SSL_ERROR_NO_CERTIFICATE';
+                        break;
+                    case 4: // SSL_ERROR_BAD_CERTIFICATE, ssl(4)
+                        result.errorMessage = 'SSL_ERROR_BAD_CERTIFICATE';
+                        break;
+                    case 8: // SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE, ssl(8)
+                        result.errorMessage = 'SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE';
+                        break;
+                    case 9: // SSL_ERROR_UNSUPPORTED_VERSION, ssl(9)
+                        result.errorMessage = 'SSL_ERROR_UNSUPPORTED_VERSION';
+                        break;
+                    case 12: // SSL_ERROR_BAD_CERT_DOMAIN, ssl(12)
+                        result.errorMessage = 'SSL_ERROR_BAD_CERT_DOMAIN';
+                        break;
+                    default:
+                        result.errorMessage = 'SSL_ERROR_OTHER';
+                        break;
+                }
             }
         } else {
-            let sslErr = Math.abs(Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE) - (result.errorCode & 0xffff);
+            result.errorClass = 'NETWORK';
 
-            switch (sslErr) {
-                case 3: // SSL_ERROR_NO_CERTIFICATE, ssl(3)
-                    result.errorCodeDesc = 'SSL_ERROR_NO_CERTIFICATE';
+            switch (result.errorCode) {
+                // connect to host:port failed
+                case 0x804B000C: // NS_ERROR_CONNECTION_REFUSED, network(13)
+                    result.errorMessage = 'NS_ERROR_CONNECTION_REFUSED';
                     break;
-                case 4: // SSL_ERROR_BAD_CERTIFICATE, ssl(4)
-                    result.errorCodeDesc = 'SSL_ERROR_BAD_CERTIFICATE';
+                // network timeout error
+                case 0x804B000E: // NS_ERROR_NET_TIMEOUT, network(14)
+                    result.errorMessage = 'NS_ERROR_NET_TIMEOUT';
                     break;
-                case 8: // SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE, ssl(8)
-                    result.errorCodeDesc = 'SSL_ERROR_UNSUPPORTED_CERTIFICATE_TYPE';
+                // hostname lookup failed
+                case 0x804B001E: // NS_ERROR_UNKNOWN_HOST, network(30)
+                    result.errorMessage = 'NS_ERROR_UNKNOWN_HOST';
                     break;
-                case 9: // SSL_ERROR_UNSUPPORTED_VERSION, ssl(9)
-                    result.errorCodeDesc = 'SSL_ERROR_UNSUPPORTED_VERSION';
-                    break;
-                case 12: // SSL_ERROR_BAD_CERT_DOMAIN, ssl(12)
-                    result.errorCodeDesc = 'SSL_ERROR_BAD_CERT_DOMAIN';
+                case 0x804B0047: // NS_ERROR_NET_INTERRUPT, network(71)
+                    result.errorMessage = 'NS_ERROR_NET_INTERRUPT';
                     break;
                 default:
-                    result.errorCodeDesc = 'SSL_ERROR_OTHER';
+                    result.errorMessage = 'NS_ERROR_OTHER';
                     break;
             }
         }
-    } else {
-        result.errorClassDesc = 'NETWORK';
 
-        switch (result.errorCode) {
-            // connect to host:port failed
-            case 0x804B000C: // NS_ERROR_CONNECTION_REFUSED, network(13)
-                result.errorCodeDesc = 'NS_ERROR_CONNECTION_REFUSED';
-                break;
-            // network timeout error
-            case 0x804B000E: // NS_ERROR_NET_TIMEOUT, network(14)
-                result.errorCodeDesc = 'NS_ERROR_NET_TIMEOUT';
-                break;
-            // hostname lookup failed
-            case 0x804B001E: // NS_ERROR_UNKNOWN_HOST, network(30)
-                result.errorCodeDesc = 'NS_ERROR_UNKNOWN_HOST';
-                break;
-            case 0x804B0047: // NS_ERROR_NET_INTERRUPT, network(71)
-                result.errorCodeDesc = 'NS_ERROR_NET_INTERRUPT';
-                break;
-            default:
-                result.errorCodeDesc = 'NS_ERROR_OTHER';
-                break;
-        }
-    }
-
-    try {
         let secInfo = xhr.channel.securityInfo;
 
         if (secInfo instanceof Ci.nsITransportSecurityInfo) {
@@ -159,53 +158,49 @@ function getError(xhr) {
     return result;
 }
 
-function check_tls(version) {
+function checkTLS(version) {
   return new Promise(function(resolve, reject) {
-    // Services.prefs.setIntPref("security.tls.version.max", version);
-    // Services.prefs.setIntPref("security.tls.version.fallback-limit", version);
-
-    function load_handler(msg) {
-        let result = {};
-        result.origin = "load";
-        resolve(result);
-    }
-
-    function error_handler(msg) {
-        let result = getError(msg.target);
-        result.origin = "error";
-        resolve(result);
-    }
-
-    function abort_handler(msg) {
-        let result = getError(msg.target);
-        result.origin = "abort";
-        resolve(result);
-    }
-
-    function timeout_handler(msg) {
-        let result = getError(msg.target);
-        result.origin = "timeout";
-        resolve(result);
-    }
-
-    let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+    Services.prefs.setIntPref("security.tls.version.max", version);
+    Services.prefs.setIntPref("security.tls.version.fallback-limit", version);
 
     try {
-        request.mozBackgroundRequest = true;
-        request.open("GET", "https://localhost:8888/", true);
+        let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
+
+        request.open("GET", "https://disabled.tls13.com/", true);
+
         request.timeout = 10000;
-        request.channel.loadFlags |= Ci.nsIRequest.LOAD_ANONYMOUS
-            | Ci.nsIRequest.LOAD_BYPASS_CACHE
-            | Ci.nsIRequest.INHIBIT_PERSISTENT_CACHING
-            | Ci.nsIRequest.VALIDATE_NEVER;
-        request.addEventListener("load", load_handler, false);
-        request.addEventListener("error", error_handler, false);
-        request.addEventListener("abort", abort_handler, false);
-        request.addEventListener("timeout", timeout_handler, false);
-        request.send(null);
+
+        request.channel.loadFlags |= Ci.nsIRequest.LOAD_ANONYMOUS;
+        request.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+        request.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
+
+        request.addEventListener("load", function(e) {
+            resolve({"origin": "load"});
+        }, false);
+
+        request.addEventListener("error", function(e) {
+            let result = getError(e.target);
+            result.origin = "error";
+            resolve(result);
+        }, false);
+
+        request.addEventListener("abort", function(e) {
+            let result = getError(e.target);
+            result.origin = "abort";
+            resolve(result);
+        }, false);
+
+        request.addEventListener("timeout", function(e) {
+            let result = getError(e.target);
+            result.origin = "timeout";
+            resolve(result);
+        }, false);
+
+        request.send();
     } catch (err) {
-        let result = getError(request);
-        result.error = err.message;
+        let result = {};
+        result.origin = "exception";
+        result.exception = err.message;
         resolve(result);
     }
   });
@@ -216,13 +211,13 @@ function startup() {}
 function shutdown() {}
 
 function install() {
-    check_tls(4).then(function(result4) {
-        result4.version = 4;
-        console.log(result4);
+    checkTLS(4).then(function(error4) {
+        error4.version = 4;
+        console.log(JSON.stringify(error4));
 
-        check_tls(3).then(function(result3) {
-            result3.version = 3;
-            console.log(result3);
+        checkTLS(3).then(function(error3) {
+            error3.version = 3;
+            console.log(JSON.stringify(error3));
         });
     });
 }
