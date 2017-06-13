@@ -162,7 +162,7 @@ function checkTLS(version) {
     try {
         let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-        request.open("GET", "https://enabled.tls13.com/", true);
+        request.open("GET", "https://disabled.tls13.com/", true);
 
         request.timeout = 10000;
 
@@ -209,10 +209,12 @@ function shutdown() {}
 function install() {
     checkTLS(4).then(function(error4) {
         error4.version = 4;
+        TelemetryController.submitExternalPing("tls13-middlebox", error4);
         console.log(JSON.stringify(error4));
 
         checkTLS(3).then(function(error3) {
             error3.version = 3;
+            TelemetryController.submitExternalPing("tls13-middlebox", error3);
             console.log(JSON.stringify(error3));
         });
     });
