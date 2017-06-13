@@ -2,16 +2,8 @@
 
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
-
-let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1'].getService(Ci.nsINSSErrorsService);
-let nativeJSON = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
 
 function getError(xhr) {
     let result = {};
@@ -123,14 +115,14 @@ function getError(xhr) {
         if (secInfo instanceof Ci.nsITransportSecurityInfo) {
             secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
-            result.securityState = secInfo.securityState;
+            result.securityStateCode = secInfo.securityState;
 
             if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_SECURE) === Ci.nsIWebProgressListener.STATE_IS_SECURE) {
-                result.securityStateDesc = "STATE_IS_SECURE";
+                result.securityStateMessage = "STATE_IS_SECURE";
             } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_INSECURE) === Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
-                result.securityStateDesc = "STATE_IS_INSECURE";
+                result.securityStateMessage = "STATE_IS_INSECURE";
             } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) === Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
-                result.securityStateDesc = "STATE_IS_BROKEN";
+                result.securityStateMessage = "STATE_IS_BROKEN";
                 result.shortSecurityDescription = secInfo.shortSecurityDescription;
                 result.errorMessage = secInfo.errorMessage;
             }
@@ -170,7 +162,7 @@ function checkTLS(version) {
     try {
         let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-        request.open("GET", "https://localhost:8888/", true);
+        request.open("GET", "https://enabled.tls13.com/", true);
 
         request.timeout = 10000;
 
