@@ -192,7 +192,7 @@ function check_tls(version) {
 
     try {
         request.mozBackgroundRequest = true;
-        request.open("GET", "https://disabled.tls13.com", true);
+        request.open("GET", "https://localhost:8888/", true);
         request.timeout = 10000;
         request.channel.loadFlags |= Ci.nsIRequest.LOAD_ANONYMOUS
             | Ci.nsIRequest.LOAD_BYPASS_CACHE
