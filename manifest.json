@@ -1,0 +1,19 @@
+{
+  "publish"     : true,
+  "priority"    : 1,
+  "name"        : "TLS 1.3 adoption by Middleboxes",
+  "description" : "Measure the adoption of TLS 1.3 by Middleboxes",
+  "info"	: "",
+  "manifest"    : {
+    "id"               : "tls13-middlebox@experiments.mozilla.org",
+    "startTime"        : 1477637000,
+    "endTime"          : 1498394501,
+    "maxActiveSeconds" : 1209600,
+    "appName"          : ["Firefox"],
+    "channel"          : ["beta", "default", "release"],
+    "minVersion"       : "51",
+    "minBuildID"       : "20170105155013",
+    "maxVersion"       : "54.*",
+    "sample"           : 1.0
+  }
+}
