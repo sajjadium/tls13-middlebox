@@ -10,10 +10,10 @@
     "endTime"          : 1498394501,
     "maxActiveSeconds" : 1209600,
     "appName"          : ["Firefox"],
-    "channel"          : ["beta", "default", "release"],
+    "channel"          : ["beta", "default", "release", "nightly"],
     "minVersion"       : "51",
     "minBuildID"       : "20170105155013",
-    "maxVersion"       : "54.*",
+    "maxVersion"       : "56.*",
     "sample"           : 1.0
   }
 }

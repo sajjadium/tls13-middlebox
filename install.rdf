@@ -12,7 +12,7 @@
       <Description>
         <em:id>{5428e386-68cf-4283-8ee3-04c12d3f4f4e}</em:id>
         <em:minVersion>51</em:minVersion>
-        <em:maxVersion>54.*</em:maxVersion>
+        <em:maxVersion>56.*</em:maxVersion>
       </Description>
     </em:targetApplication>
 
