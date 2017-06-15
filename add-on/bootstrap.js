@@ -162,7 +162,7 @@ function checkTLS(version) {
     try {
         let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-        request.open("GET", "https://disabled.tls13.com/", true);
+        request.open("GET", "https://enabled.tls13.com/", true);
 
         request.timeout = 10000;
 
