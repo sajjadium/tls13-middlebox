@@ -7,45 +7,22 @@ Cu.import("resource://gre/modules/TelemetryController.jsm");
 
 let prefs = new Preferences({defaultBranch: true});
 
-function getSecurityInfo(xhr) {
+function getError(xhr) {
     let result = {};
 
     try {
+        result.status = xhr.channel.QueryInterface(Ci.nsIRequest).status;
+
         let secInfo = xhr.channel.securityInfo;
 
         if (secInfo instanceof Ci.nsITransportSecurityInfo) {
             secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
-            result.securityStateCode = secInfo.securityState;
+            result.securityState = secInfo.securityState;
 
-            if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_SECURE) === Ci.nsIWebProgressListener.STATE_IS_SECURE) {
-                result.securityStateMessage = "STATE_IS_SECURE";
-            } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_INSECURE) === Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
-                result.securityStateMessage = "STATE_IS_INSECURE";
-            } else if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) === Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
-                result.securityStateMessage = "STATE_IS_BROKEN";
+            if ((secInfo.securityState & Ci.nsIWebProgressListener.STATE_IS_BROKEN) === Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
                 result.shortSecurityDescription = secInfo.shortSecurityDescription;
                 result.errorMessage = secInfo.errorMessage;
-            }
-        }
-
-        if (secInfo instanceof Ci.nsISSLStatusProvider) {
-            let sslStatus = secInfo.QueryInterface(Ci.nsISSLStatusProvider).SSLStatus;
-
-            if (sslStatus) {
-                let cert = sslStatus.QueryInterface(Ci.nsISSLStatus).serverCert;
-
-                result.cert = {};
-
-                result.cert.commonName = cert.commonName;
-                result.cert.issuerOrganization = cert.issuerOrganization;
-                result.cert.organization = cert.organization;
-                result.cert.sha1Fingerprint = cert.sha1Fingerprint;
-
-                result.cert.validity = {};
-                var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
-                result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
-                result.cert.validity.notAfterGMT = validity.notAfterGMT;
             }
         }
     } catch(err) {
@@ -55,15 +32,15 @@ function getSecurityInfo(xhr) {
     return result;
 }
 
-function checkTLS(version) {
+function checkTLS(version, url) {
     return new Promise(function(resolve, reject) {
-        prefs.set("security.tls.version.max", version);
-        prefs.set("security.tls.version.fallback-limit", version);
-
         try {
+            prefs.set("security.tls.version.max", version);
+            prefs.set("security.tls.version.fallback-limit", version);
+
             let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-            request.open("GET", "https://enabled.tls13.com/", true);
+            request.open("GET", url, true);
 
             request.timeout = 10000;
 
@@ -72,7 +49,9 @@ function checkTLS(version) {
             request.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
 
             request.addEventListener("load", function(e) {
-                resolve({"origin": "load"});
+                let result = getError(e.target);
+                result.origin = "load";
+                resolve(result);
             }, false);
 
             request.addEventListener("error", function(e) {
@@ -111,10 +90,12 @@ function install() {
     let current_max = prefs.get("security.tls.version.max");
     let current_fallback = prefs.get("security.tls.version.fallback-limit");
 
-    checkTLS(4).then(function(error4) {
-        checkTLS(3).then(function(error3) {
-            error3.version = 3;
-            TelemetryController.submitExternalPing("tls13-middlebox", error3);
+    checkTLS(4, "https://enabled.tls13.com").then(function(error4) {
+        checkTLS(3, "https://enabled.tls13.com").then(function(error3) {
+            TelemetryController.submitExternalPing("tls13-middlebox", {"1.3": error4, "1.2": error3});
+
+            prefs.set("security.tls.version.max", current_max);
+            prefs.set("security.tls.version.fallback-limit", current_fallback);
         });
     });
 }
