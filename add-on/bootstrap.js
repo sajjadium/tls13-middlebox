@@ -5,17 +5,21 @@ let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 
-let prefs = new Preferences({defaultBranch: true});
+let prefs = new Preferences();
 
+// all combination of configurations we care about.
+// for is_tls13 == true we need a server that supports TLS 1.3
+// for is_tls13 == false we need a server that DOES NOT support TLS 1.3
 let configurations = [
     {max_version: 4, fallback_limit: 4, is_tls13: true, website: "enabled.tls13.com"},
     {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
     {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
     {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
-    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "enabled.tls13.com"},
+    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "localhost:8888"},
     {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
 ];
 
+// run 
 async function testConfigurations() {
     let output = [];
 
@@ -30,6 +34,7 @@ function getError(xhr) {
     let result = {};
 
     try {
+        // this is the most important value based on which we can find out the problem
         result.status = xhr.channel.QueryInterface(Ci.nsIRequest).status;
 
         let secInfo = xhr.channel.securityInfo;
@@ -38,13 +43,16 @@ function getError(xhr) {
             secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
             result.securityState = secInfo.securityState;
+
+            // Error message on connection failure. I am not sure if we can get this error message using status code.
+            // It is safer to collect this information as well.
             result.errorMessage = secInfo.errorMessage;
 
             // For secure connections (SSL), this gives the common name (CN) of the certifying authority (Privacy Concern?)
             result.shortSecurityDescription = secInfo.shortSecurityDescription;
         }
-    } catch(err) {
-        result.exception = err.message;
+    } catch(ex) {
+        result.exception = ex.message;
     }
 
     return result;
@@ -52,6 +60,7 @@ function getError(xhr) {
 
 function makeRequest(config) {
     return new Promise(function(resolve, reject) {
+        // prepare the result and call the resolve
         function reportResult(origin, xhr) {
             let result = Object.assign({origin: origin}, config);
 
@@ -62,6 +71,7 @@ function makeRequest(config) {
         }
 
         try {
+            // set the configuration to onces that passed to this function
             prefs.set("security.tls.version.max", config.max_version);
             prefs.set("security.tls.version.fallback-limit", config.fallback_limit);
 
@@ -92,8 +102,8 @@ function makeRequest(config) {
             }, false);
 
             xhr.send();
-        } catch (err) {
-            resolve(Object.assign({origin: "exception", exception: err.message}, config));
+        } catch (ex) {
+            resolve(Object.assign({origin: "exception", exception: ex.message}, config));
         }
     });
 }
@@ -103,16 +113,16 @@ function startup() {}
 function shutdown() {}
 
 function install() {
+    // record the current values before the experiment starts
     let current_max = prefs.get("security.tls.version.max");
     let current_fallback = prefs.get("security.tls.version.fallback-limit");
 
     testConfigurations().then(result => {
+        // restore the old values after experiment finished
         prefs.set("security.tls.version.max", current_max);
         prefs.set("security.tls.version.fallback-limit", current_fallback);
 
-        TelemetryController.submitExternalPing("tls13-middlebox", result);
-
-        console.log(result);
+        TelemetryController.submitExternalPing("tls13-middlebox", {value: result});
     });
 }
 
