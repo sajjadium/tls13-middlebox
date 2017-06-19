@@ -1,6 +1,4 @@
-# Introduction
-
-# Sample output when either of the preferences was set by the user
+# Sample Output with User Set Preferences
 
 ```
 {
@@ -15,7 +13,7 @@
 }
 ```
 
-# Sample output when none of the preferences was set by the user
+# Sample Output with Default Preferences
 
 ```
 {
