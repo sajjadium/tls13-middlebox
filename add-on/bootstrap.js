@@ -115,19 +115,20 @@ function shuffleArray(original_array) {
 }
 
 // make the request for each configuration
-async function testConfigurations() {
-    let output = [];
+async function runConfigurations() {
+    let result = [];
 
     for (let config of shuffleArray(configurations)) {
         // we wait until the result is ready for the current configuration
         // and then move on to the next configuration
-        output.push(await makeRequest(config));
+        result.push(await makeRequest(config));
     }
 
-    return output;
+    return result;
 }
 
-function isUserset() {
+// check if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+function hasUserSetPreference() {
     let readonly_prefs = new Preferences();
 
     if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
@@ -154,16 +155,16 @@ function startup() {}
 function shutdown() {}
 
 function install() {
-    // abort in case any of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-    if (isUserset())
+    // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+    if (hasUserSetPreference())
         return;
 
     // record the default values before the experiment starts
     let default_max_version = readwrite_prefs.get(VERSION_MAX_PREF);
     let default_fallback_limit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
-    testConfigurations().then(result => {
-        // reporting the default values plus the test results
+    runConfigurations().then(result => {
+        // report the test results
         TelemetryController.submitExternalPing("tls13-middlebox", {
             tests: result
         });
