@@ -1,4 +1,4 @@
-# Sample Output with User Set Preferences
+# Sample Output with User-Set Preferences
 
 ```
 {
