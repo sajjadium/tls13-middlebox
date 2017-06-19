@@ -5,30 +5,23 @@ let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 
-let prefs = new Preferences();
+const VERSION_MAX_PREF = "security.tls.version.max";
+const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
+
+let prefs = new Preferences({defaultBranch: true});
 
 // all combination of configurations we care about.
 // for is_tls13 == true we need a server that supports TLS 1.3
 // for is_tls13 == false we need a server that DOES NOT support TLS 1.3
+
 let configurations = [
     {max_version: 4, fallback_limit: 4, is_tls13: true, website: "enabled.tls13.com"},
     {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
-    {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
-    {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
-    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "localhost:8888"},
-    {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
+    // {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
+    // {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
+    // {max_version: 3, fallback_limit: 3, is_tls13: true, website: "localhost:8888"},
+    // {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
 ];
-
-// run 
-async function testConfigurations() {
-    let output = [];
-
-    for (let config of configurations) {
-        output.push(await makeRequest(config));
-    }
-
-    return output;
-}
 
 function getError(xhr) {
     let result = {};
@@ -71,7 +64,7 @@ function makeRequest(config) {
         }
 
         try {
-            // set the configuration to onces that passed to this function
+            // set the configuration to the values that were passed to this function
             prefs.set("security.tls.version.max", config.max_version);
             prefs.set("security.tls.version.fallback-limit", config.fallback_limit);
 
@@ -108,21 +101,66 @@ function makeRequest(config) {
     });
 }
 
+// shuffle the array randomly
+function shuffleArray(original_array) {
+    let copy_array = original_array.slice();
+
+    let output_array = [];
+
+    while (copy_array.length > 0) {
+        let x = Math.floor(Math.random() * copy_array.length);
+        output_array.push(copy_array.splice(x, 1)[0]);
+    }
+
+    return output_array;
+}
+
+// make the request for each configuration
+async function testConfigurations() {
+    let output = [];
+
+    for (let config of shuffleArray(configurations)) {
+        // we wait until the result is ready for the current config
+        // and then move on to the next confiugration
+        output.push(await makeRequest(config));
+    }
+
+    return output;
+}
+
 function startup() {}
 
 function shutdown() {}
 
 function install() {
     // record the current values before the experiment starts
-    let current_max = prefs.get("security.tls.version.max");
-    let current_fallback = prefs.get("security.tls.version.fallback-limit");
+    let default_max_version = prefs.get(VERSION_MAX_PREF);
+    let default_fallback_limit = prefs.get(FALLBACK_LIMIT_PREF);
+
+    // abort in case any of these values were set by users
+    // reports the default values and whether they were set by user
+    if (prefs.isSet(VERSION_MAX_PREF) || prefs.isSet(FALLBACK_LIMIT_PREF)) {
+        TelemetryController.submitExternalPing("tls13-middlebox", {
+            default_max_version: default_max_version,
+            default_fallback_limit: default_fallback_limit,
+            is_max_version_userset: prefs.isSet(VERSION_MAX_PREF),
+            is_fallback_limit_userset: prefs.isSet(FALLBACK_LIMIT_PREF)
+        });
+
+        return;
+    }
 
     testConfigurations().then(result => {
-        // restore the old values after experiment finished
-        prefs.set("security.tls.version.max", current_max);
-        prefs.set("security.tls.version.fallback-limit", current_fallback);
+        // reporting the default values plus the test results
+        TelemetryController.submitExternalPing("tls13-middlebox", {
+            default_max_version: default_max_version,
+            default_fallback_limit: default_fallback_limit,
+            tests: result
+        });
 
-        TelemetryController.submitExternalPing("tls13-middlebox", {value: result});
+        // restore the old values after experiment finished
+        prefs.set(VERSION_MAX_PREF, default_max_version);
+        prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
     });
 }
 
