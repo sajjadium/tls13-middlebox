@@ -8,19 +8,18 @@ Cu.import("resource://gre/modules/TelemetryController.jsm");
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
-let prefs = new Preferences({defaultBranch: true});
+let readwrite_prefs = new Preferences({defaultBranch: true});
 
 // all combination of configurations we care about.
 // for is_tls13 == true we need a server that supports TLS 1.3
 // for is_tls13 == false we need a server that DOES NOT support TLS 1.3
-
 let configurations = [
     {max_version: 4, fallback_limit: 4, is_tls13: true, website: "enabled.tls13.com"},
     {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
-    // {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
-    // {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
-    // {max_version: 3, fallback_limit: 3, is_tls13: true, website: "localhost:8888"},
-    // {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
+    {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
+    {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
+    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "localhost:8888"},
+    {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
 ];
 
 function getError(xhr) {
@@ -54,19 +53,19 @@ function getError(xhr) {
 function makeRequest(config) {
     return new Promise(function(resolve, reject) {
         // prepare the result and call the resolve
-        function reportResult(origin, xhr) {
-            let result = Object.assign({origin: origin}, config);
+        function reportResult(event, xhr) {
+            let output = Object.assign({result: {event: event}}, config);
 
-            if (origin !== "load")
-                result = Object.assign(result, getError(xhr));
+            if (event !== "load")
+                output.result = Object.assign(output.result, getError(xhr));
 
-            resolve(result);
+            resolve(output);
         }
 
         try {
             // set the configuration to the values that were passed to this function
-            prefs.set("security.tls.version.max", config.max_version);
-            prefs.set("security.tls.version.fallback-limit", config.fallback_limit);
+            readwrite_prefs.set("security.tls.version.max", config.max_version);
+            readwrite_prefs.set("security.tls.version.fallback-limit", config.fallback_limit);
 
             let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
@@ -96,7 +95,7 @@ function makeRequest(config) {
 
             xhr.send();
         } catch (ex) {
-            resolve(Object.assign({origin: "exception", exception: ex.message}, config));
+            resolve(Object.assign({result: {event: "exception", description: ex.toSource()}}, config));
         }
     });
 }
@@ -120,12 +119,34 @@ async function testConfigurations() {
     let output = [];
 
     for (let config of shuffleArray(configurations)) {
-        // we wait until the result is ready for the current config
-        // and then move on to the next confiugration
+        // we wait until the result is ready for the current configuration
+        // and then move on to the next configuration
         output.push(await makeRequest(config));
     }
 
     return output;
+}
+
+function isUserset() {
+    let readonly_prefs = new Preferences();
+
+    if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
+        // reports the current values as well as whether they were set by the user
+        TelemetryController.submitExternalPing("tls13-middlebox", {
+            max_version: {
+                value: readonly_prefs.get(VERSION_MAX_PREF),
+                is_userset: readonly_prefs.isSet(VERSION_MAX_PREF)
+            },
+            fallback_limit: {
+                value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
+                is_userset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+            }
+        });
+
+        return true;
+    }
+
+    return false;
 }
 
 function startup() {}
@@ -133,34 +154,23 @@ function startup() {}
 function shutdown() {}
 
 function install() {
-    // record the current values before the experiment starts
-    let default_max_version = prefs.get(VERSION_MAX_PREF);
-    let default_fallback_limit = prefs.get(FALLBACK_LIMIT_PREF);
-
-    // abort in case any of these values were set by users
-    // reports the default values and whether they were set by user
-    if (prefs.isSet(VERSION_MAX_PREF) || prefs.isSet(FALLBACK_LIMIT_PREF)) {
-        TelemetryController.submitExternalPing("tls13-middlebox", {
-            default_max_version: default_max_version,
-            default_fallback_limit: default_fallback_limit,
-            is_max_version_userset: prefs.isSet(VERSION_MAX_PREF),
-            is_fallback_limit_userset: prefs.isSet(FALLBACK_LIMIT_PREF)
-        });
-
+    // abort in case any of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+    if (isUserset())
         return;
-    }
+
+    // record the default values before the experiment starts
+    let default_max_version = readwrite_prefs.get(VERSION_MAX_PREF);
+    let default_fallback_limit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
     testConfigurations().then(result => {
         // reporting the default values plus the test results
         TelemetryController.submitExternalPing("tls13-middlebox", {
-            default_max_version: default_max_version,
-            default_fallback_limit: default_fallback_limit,
             tests: result
         });
 
-        // restore the old values after experiment finished
-        prefs.set(VERSION_MAX_PREF, default_max_version);
-        prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
+        // restore the default values after experiment is over
+        readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
+        readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
     });
 }
 
