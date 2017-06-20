@@ -17,6 +17,8 @@
 
 ```
 {
+  "default_max_version": 3,
+  "default_fallback_limit": 3,
   "tests": [
     {
       "result": {

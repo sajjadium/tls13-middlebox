@@ -166,6 +166,8 @@ function install() {
     runConfigurations().then(result => {
         // report the test results
         TelemetryController.submitExternalPing("tls13-middlebox", {
+            default_max_version: default_max_version,
+            default_fallback_limit: default_fallback_limit,
             tests: result
         });
 
