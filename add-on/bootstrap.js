@@ -39,9 +39,6 @@ function getError(xhr) {
             // Error message on connection failure. I am not sure if we can get this error message using status code.
             // It is safer to collect this information as well.
             result.errorMessage = secInfo.errorMessage;
-
-            // For secure connections (SSL), this gives the common name (CN) of the certifying authority (Privacy Concern?)
-            result.shortSecurityDescription = secInfo.shortSecurityDescription;
         }
     } catch(ex) {
         result.exception = ex.message;
