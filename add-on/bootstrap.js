@@ -26,19 +26,62 @@ function getError(xhr) {
     let result = {};
 
     try {
+        let channel = xhr.channel;
+
         // this is the most important value based on which we can find out the problem
-        result.status = xhr.channel.QueryInterface(Ci.nsIRequest).status;
+        channel.QueryInterface(Ci.nsIRequest);
+        result.status = channel.status
 
-        let secInfo = xhr.channel.securityInfo;
+        let securityInfo = channel.securityInfo;
 
-        if (secInfo instanceof Ci.nsITransportSecurityInfo) {
-            secInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+        if (securityInfo instanceof Ci.nsITransportSecurityInfo) {
+            securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
-            result.securityState = secInfo.securityState;
+            result.securityState = securityInfo.securityState;
 
             // Error message on connection failure. I am not sure if we can get this error message using status code.
             // It is safer to collect this information as well.
-            result.errorMessage = secInfo.errorMessage;
+            result.errorMessage = securityInfo.errorMessage;
+
+            // let failedCertChain = securityInfo.failedCertChain;
+            // if (failedCertChain) {
+            //     failedCertChain.QueryInterface(Ci.nsIX509CertList);
+            // }
+        }
+
+        if (securityInfo instanceof Ci.nsISSLStatusProvider) {
+            securityInfo.QueryInterface(Ci.nsISSLStatusProvider);
+            let sslStatus = securityInfo.SSLStatus;
+
+            if (sslStatus) {
+                sslStatus.QueryInterface(Ci.nsISSLStatus);
+
+                let serverCert = sslStatus.serverCert;
+                serverCert.QueryInterface(Ci.nsIX509Cert);
+
+                console.log(securityInfo);
+                console.log(serverCert);
+                // let usages = {};
+                // let usages_string = {};
+
+                // serverCert.getUsagesString(true, usages, usages_string);
+
+                // console.log(usages_string);
+
+                // let cert = sslStatus.serverCert;
+
+                // result.cert = {};
+
+                // result.cert.commonName = cert.commonName;
+                // result.cert.issuerOrganization = cert.issuerOrganization;
+                // result.cert.organization = cert.organization;
+                // result.cert.sha1Fingerprint = cert.sha1Fingerprint;
+
+                // result.cert.validity = {};
+                // var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
+                // result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
+                // result.cert.validity.notAfterGMT = validity.notAfterGMT;
+            }
         }
     } catch(ex) {
         result.exception = ex.message;
@@ -53,7 +96,7 @@ function makeRequest(config) {
         function reportResult(event, xhr) {
             let output = Object.assign({result: {event: event}}, config);
 
-            if (event !== "load")
+            // if (event !== "load")
                 output.result = Object.assign(output.result, getError(xhr));
 
             resolve(output);
