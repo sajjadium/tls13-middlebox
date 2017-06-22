@@ -15,11 +15,11 @@ let readwrite_prefs = new Preferences({defaultBranch: true});
 // for is_tls13 == false we need a server that DOES NOT support TLS 1.3
 let configurations = [
     {max_version: 4, fallback_limit: 4, is_tls13: true, website: "enabled.tls13.com"},
-    // {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
-    // {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
-    // {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
-    // {max_version: 3, fallback_limit: 3, is_tls13: true, website: "tls13.crypto.mozilla.org"},
-    // {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
+    {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
+    {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
+    {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
+    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "tls13.crypto.mozilla.org"},
+    {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
 ];
 
 function getFieldValue(obj, name) {
