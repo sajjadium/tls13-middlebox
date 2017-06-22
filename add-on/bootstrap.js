@@ -15,14 +15,22 @@ let readwrite_prefs = new Preferences({defaultBranch: true});
 // for is_tls13 == false we need a server that DOES NOT support TLS 1.3
 let configurations = [
     {max_version: 4, fallback_limit: 4, is_tls13: true, website: "enabled.tls13.com"},
-    {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
-    {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
-    {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
-    {max_version: 3, fallback_limit: 3, is_tls13: true, website: "tls13.crypto.mozilla.org"},
-    {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
+    // {max_version: 4, fallback_limit: 4, is_tls13: false, website: "disabled.tls13.com"},
+    // {max_version: 4, fallback_limit: 3, is_tls13: true, website: "www.allizom.org"},
+    // {max_version: 4, fallback_limit: 3, is_tls13: false, website: "control.tls12.com"},
+    // {max_version: 3, fallback_limit: 3, is_tls13: true, website: "tls13.crypto.mozilla.org"},
+    // {max_version: 3, fallback_limit: 3, is_tls13: false, website: "short.tls13.com"}
 ];
 
-function getError(xhr) {
+function getFieldValue(obj, name) {
+	try {
+		return obj[name];
+	} catch (ex) {
+		return undefined;
+	}
+}
+
+function getInfo(xhr) {
     let result = {};
 
     try {
@@ -30,23 +38,18 @@ function getError(xhr) {
 
         // this is the most important value based on which we can find out the problem
         channel.QueryInterface(Ci.nsIRequest);
-        result.status = channel.status
+        result.status = getFieldValue(channel, 'status');
 
-        let securityInfo = channel.securityInfo;
+        let securityInfo = getFieldValue(channel, 'securityInfo');
 
         if (securityInfo instanceof Ci.nsITransportSecurityInfo) {
             securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
-            result.securityState = securityInfo.securityState;
+            result.securityState = getFieldValue(securityInfo, 'securityState');
 
             // Error message on connection failure. I am not sure if we can get this error message using status code.
             // It is safer to collect this information as well.
-            result.errorMessage = securityInfo.errorMessage;
-
-            // let failedCertChain = securityInfo.failedCertChain;
-            // if (failedCertChain) {
-            //     failedCertChain.QueryInterface(Ci.nsIX509CertList);
-            // }
+            result.errorMessage = getFieldValue(securityInfo, 'errorMessage');
         }
 
         if (securityInfo instanceof Ci.nsISSLStatusProvider) {
@@ -55,32 +58,38 @@ function getError(xhr) {
 
             if (sslStatus) {
                 sslStatus.QueryInterface(Ci.nsISSLStatus);
-
                 let serverCert = sslStatus.serverCert;
-                serverCert.QueryInterface(Ci.nsIX509Cert);
 
-                console.log(securityInfo);
+                console.log(sslStatus);
                 console.log(serverCert);
-                // let usages = {};
-                // let usages_string = {};
 
-                // serverCert.getUsagesString(true, usages, usages_string);
+                result.certChain = [];
 
-                // console.log(usages_string);
+                // extracting the certificate chain including the root CA.
+                // if isBuiltInRoot == false, it means there is middlebox on the way
+                let cert = serverCert;
+                while (cert) {
+                	result.certChain.push({
+                		certType: getFieldValue(cert, 'certType'),
+                		isBuiltInRoot: getFieldValue(cert, 'isBuiltInRoot'),
+                		isSelfSigned: getFieldValue(cert, 'isSelfSigned'),
+                		keyUsages: getFieldValue(cert, 'keyUsages'),
+                		tokenName: getFieldValue(cert, 'tokenName')
+                	});
 
-                // let cert = sslStatus.serverCert;
+                	cert = getFieldValue(cert, 'issuer');
+                }
 
-                // result.cert = {};
-
-                // result.cert.commonName = cert.commonName;
-                // result.cert.issuerOrganization = cert.issuerOrganization;
-                // result.cert.organization = cert.organization;
-                // result.cert.sha1Fingerprint = cert.sha1Fingerprint;
-
-                // result.cert.validity = {};
-                // var validity = cert.validity.QueryInterface(Ci.nsIX509CertValidity);
-                // result.cert.validity.notBeforeGMT = validity.notBeforeGMT;
-                // result.cert.validity.notAfterGMT = validity.notAfterGMT;
+                // extracting some other info from the connection that are not violating privacy
+                result.certificateTransparencyStatus = getFieldValue(sslStatus, 'certificateTransparencyStatus');
+                result.cipherName = getFieldValue(sslStatus, 'cipherName');
+                result.isDomainMismatch = getFieldValue(sslStatus, 'isDomainMismatch');
+                result.isExtendedValidation = getFieldValue(sslStatus, 'isExtendedValidation');
+                result.isNotValidAtThisTime = getFieldValue(sslStatus, 'isNotValidAtThisTime');
+                result.isUntrusted = getFieldValue(sslStatus, 'isUntrusted');
+                result.keyLength = getFieldValue(sslStatus, 'keyLength');
+                result.protocolVersion = getFieldValue(sslStatus, 'protocolVersion');
+                result.secretKeyLength = getFieldValue(sslStatus, 'secretKeyLength');
             }
         }
     } catch(ex) {
@@ -96,8 +105,7 @@ function makeRequest(config) {
         function reportResult(event, xhr) {
             let output = Object.assign({result: {event: event}}, config);
 
-            // if (event !== "load")
-                output.result = Object.assign(output.result, getError(xhr));
+            output.result = Object.assign(output.result, getInfo(xhr));
 
             resolve(output);
         }
