@@ -21,7 +21,7 @@ int main(int argc , char *argv[])
     //Prepare the sockaddr_in structure
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons( 8888 );
+    server.sin_port = htons( 8080 );
      
     //Bind
     if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
@@ -48,7 +48,7 @@ int main(int argc , char *argv[])
             return 1;
         }
         puts("Connection accepted");
-        sleep(5);
+        // sleep(5);
         close(client_sock);
     }
      
