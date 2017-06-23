@@ -1,28 +1,29 @@
-Need approval to test TLS 1.3 adoption by middle-boxes in nightly.
-
+Intent to ship:
+ 
+An experiment to measure TLS 1.3 compatibility in middleboxes.
+ 
+ 
 Description:
-
-After POSITIVE OKAY ("explicit yes") from y'all, we intend to ship a test of TLS 1.3 adoption by middle-boxes.
-
+ 
+After POSITIVE OKAY ("explicit yes") from y'all, we intend to ship a TLS 1.3 compatibility test in middleboxes. This test re-configures the browser to do TLS 1.3 with/without fallback and measures success/failure rates by hitting a specific set of known sites.
+ 
+ 
 Population Affected:
-
-1% of Nightly. All locales and user configurations.
-
+ 
+We start with 1% of beta for testing and then move up to 10% of beta and 1% of release after fixing problems and refining the add-on.
+ 
+ 
 Effect:
-
-During the experiment, the values of ("security.tls.version.max", "security.tls.version.fallback-limit") preferences will be set to (4, 4), (4, 3), and (3, 3) in a random order. For each combination, we make XHR requests and record the results.
-
+ 
+The experiment starts as soon as the add-on was installed. During the experiment, the values of ("security.tls.version.max", "security.tls.version.fallback-limit") preferences will be set to (4, 4), (4, 3), and (3, 3) in a random order. For each combination, we make XHR requests to a set of specific sites and record the results.
+ 
+ 
 Cleanup:
-
-In general, our experiment lasts for a short amount of time. Before starting the experiment, we store the default values for the aforementioned preferences, and restore them after the experiment is over. In presence of a crash or an unprecedented incident, the preferences will be restored to their default values after browser startup since we do not modify them permanently.
-
+ 
+In general, our experiment lasts for a short amount of time. Before starting the experiment, the add-on stores the default values for the aforementioned preferences, and restores them after the experiment is over. In presence of a crash or an unprecedented incident, the preferences will be restored to their default values after browser startup since the add-on does not modify them permanently.
+ 
+ 
 Goals:
-
-We are planning to identify the machines that face failed connections when TLS 1.3 is enabled. This most likely happens due to presence of middle-boxes that interfere with the user's HTTPS traffic. In case of failure, we collect error messages in order to understand what went wrong.
-
-sampling ratio
-pref-flip experiments
-rollback/cancellation
-
-Confirm/iterate on template language for notifying Release-Drivers
-about pref-flips.
+ 
+We are planning to identify the machines that face failed connections when negotiating TLS 1.3. This most likely happens due to presence of middleboxes that interfere with the user's HTTPS traffic. In case of failure, we collect error messages in order to understand what went wrong.
+ 
