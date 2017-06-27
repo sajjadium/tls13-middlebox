@@ -7,6 +7,8 @@ dataset = (dataset.where(docType='OTHER')
                   .where(appUpdateChannel='release')
                   .where(submissionDate=lambda x: x >= '20170605'))
 
+records = dataset.records(sc)
+
 logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox")
 
 logs.count()
