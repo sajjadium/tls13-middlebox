@@ -60,9 +60,6 @@ function getInfo(xhr) {
                 sslStatus.QueryInterface(Ci.nsISSLStatus);
                 let serverCert = sslStatus.serverCert;
 
-                console.log(sslStatus);
-                console.log(serverCert);
-
                 result.certChain = [];
 
                 // extracting the certificate chain including the root CA.
@@ -211,16 +208,16 @@ function install() {
     let default_fallback_limit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
     runConfigurations().then(result => {
+        // restore the default values after experiment is over
+        readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
+        readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
+
         // report the test results
         TelemetryController.submitExternalPing("tls13-middlebox", {
             default_max_version: default_max_version,
             default_fallback_limit: default_fallback_limit,
             tests: result
         });
-
-        // restore the default values after experiment is over
-        readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
-        readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
     });
 }
 
