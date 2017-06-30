@@ -185,8 +185,11 @@ function hasNonBuiltInRootCertificate() {
     while (iter.hasMoreElements()) {
         let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
 
-        if (getFieldValue(cert, 'issuer') === null && getFieldValue(cert, 'isBuiltInRoot') === false)
+        if (getFieldValue(cert, 'issuer') === null &&
+            getFieldValue(cert, 'isBuiltInRoot') === false &&
+            getFieldValue(cert, 'tokenName').toLowerCase() !== "Builtin Object Token".toLowerCase()) {
             return true;
+        }
     }
 
     return false;
@@ -197,8 +200,6 @@ function startup() {}
 function shutdown() {}
 
 function install() {
-    isNonSystemRootCertificateAvailable();
-
     // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
     if (hasUserSetPreference())
         return;
