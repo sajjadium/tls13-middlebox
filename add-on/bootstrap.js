@@ -47,13 +47,11 @@ function isNonBuiltInRootCertInstalled() {
   while (iter.hasMoreElements()) {
     let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
 
-    // extract the root certificate for the current certificate
-    let root_cert = extractRootCert(cert);
-
-    if (getFieldValue(root_cert, "isBuiltInRoot") === false &&
+    if (getFieldValue(cert, "issuer") === null &&
+      getFieldValue(cert, "isBuiltInRoot") === false &&
       // There are some root certificates that are built-in but their isBuiltInRoot is false.
       // That is why we check their tokenName as well
-      getFieldValue(root_cert, "tokenName").toLowerCase() !== "Builtin Object Token".toLowerCase()) {
+      getFieldValue(cert, "tokenName").toLowerCase() !== "Builtin Object Token".toLowerCase()) {
       return true;
     }
   }
@@ -191,7 +189,7 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
-    TelemetryController.submitExternalPing("tls13-middlebox-v1", {
+    TelemetryController.submitExternalPing("tls13-middlebox", {
       maxVersion: {
         value: readonly_prefs.get(VERSION_MAX_PREF),
         isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
