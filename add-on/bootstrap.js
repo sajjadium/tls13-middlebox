@@ -18,6 +18,7 @@ let configurations = [
     {maxVersion: 3, fallbackLimit: 3, website: "control.tls12.com"}
 ];
 
+// some fields are not available sometimes, so we have to catch the errors and return undefined.
 function getFieldValue(obj, name) {
 	try {
 		return obj[name];
@@ -58,10 +59,9 @@ function getInfo(xhr) {
                 // extracting sha256 fingerprint for the leaf cert
                 result.serverCertSha256Fingerprint = getFieldValue(sslStatus.serverCert, 'sha256Fingerprint');
 
-                // extracting the root certificate from the chain
-                // if the root certificate is not built-in, it means that there is middlebox on the way
                 let root_cert = extractRootCert(sslStatus.serverCert);
 
+                // if the root certificate is not built-in, it means that there is middlebox on the way
                 // we need both of them to identify whether it is truly a built-in root certificate
                 result.rootCertIsBuiltIn = getFieldValue(root_cert, 'isBuiltInRoot');
                 result.rootCertTokenName = getFieldValue(root_cert, 'tokenName');
@@ -175,6 +175,7 @@ function hasUserSetPreference() {
     return false;
 }
 
+// extracting the root certificate from the chain
 function extractRootCert(cert) {
     let root_cert = cert;
 
@@ -185,6 +186,7 @@ function extractRootCert(cert) {
     return root_cert;
 }
 
+// returns true if there is at least one non-builtin root certificate is installed
 function isNonBuiltInRootCertInstalled() {
     let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
@@ -193,7 +195,7 @@ function isNonBuiltInRootCertInstalled() {
     while (iter.hasMoreElements()) {
         let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
 
-        // extract its root certificate
+        // extract the root certificate for the current certificate
         let root_cert = extractRootCert(cert);
 
         if (getFieldValue(root_cert, 'isBuiltInRoot') === false &&
@@ -222,11 +224,11 @@ function install() {
     let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
     runConfigurations().then(result => {
-        // restore the default values after experiment is over
+        // restore the default values after the experiment is over
         readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
         readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
-        // report the test results
+        // report the test results to telemetry
         TelemetryController.submitExternalPing("tls13-middlebox", {
             defaultMaxVersion: defaultMaxVersion,
             defaultFallbackLimit: defaultFallbackLimit,
