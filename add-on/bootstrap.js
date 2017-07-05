@@ -60,11 +60,7 @@ function getInfo(xhr) {
 
                 // extracting the root certificate from the chain
                 // if the root certificate is not built-in, it means that there is middlebox on the way
-                let root_cert = sslStatus.serverCert;
-
-                while (getFieldValue(root_cert, 'issuer')) {
-                    root_cert = getFieldValue(root_cert, 'issuer');
-                }
+                let root_cert = extractRootCert(sslStatus.serverCert);
 
                 // we need both of them to identify whether it is truly a built-in root certificate
                 result.rootCertIsBuiltIn = getFieldValue(root_cert, 'isBuiltInRoot');
@@ -85,7 +81,7 @@ function makeRequest(config) {
     return new Promise(function(resolve, reject) {
         // put together the configuration and the info collected from the connection
         function reportResult(event, xhr) {
-            let output = Object.assign({result: {event: event}}, config);
+            let output = Object.assign({result: {event: event, responseCode: xhr.status}}, config);
             output.result = Object.assign(output.result, getInfo(xhr));
             resolve(output);
         }
@@ -179,6 +175,16 @@ function hasUserSetPreference() {
     return false;
 }
 
+function extractRootCert(cert) {
+    let root_cert = cert;
+
+    while (getFieldValue(root_cert, 'issuer')) {
+        root_cert = getFieldValue(root_cert, 'issuer');
+    }
+
+    return root_cert;
+}
+
 function isNonBuiltInRootCertInstalled() {
     let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
@@ -187,11 +193,14 @@ function isNonBuiltInRootCertInstalled() {
     while (iter.hasMoreElements()) {
         let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
 
-        if (getFieldValue(cert, 'issuer') === null &&
-            getFieldValue(cert, 'isBuiltInRoot') === false &&
+        // extract its root certificate
+        let root_cert = extractRootCert(cert);
+
+        if (getFieldValue(root_cert, 'isBuiltInRoot') === false &&
             // There are some root certificates that are built-in but their isBuiltInRoot is false.
             // That is why we check their tokenName as well
-            getFieldValue(cert, 'tokenName').toLowerCase() !== "Builtin Object Token".toLowerCase()) {
+            getFieldValue(root_cert, 'tokenName').toLowerCase() !== "Builtin Object Token".toLowerCase()) {
+
             return true;
         }
     }

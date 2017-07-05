@@ -48,7 +48,7 @@ int main(int argc , char *argv[])
             return 1;
         }
         puts("Connection accepted");
-        // sleep(5);
+        sleep(20);
         close(client_sock);
     }
      
