@@ -66,7 +66,9 @@ function getInfo(xhr) {
                     root_cert = getFieldValue(root_cert, 'issuer');
                 }
 
-                result.hasBuiltInRootCA = getFieldValue(root_cert, 'isBuiltInRoot');
+                // we need both of them to identify whether it is truly a built-in root certificate
+                result.rootCertIsBuiltIn = getFieldValue(root_cert, 'isBuiltInRoot');
+                result.rootCertTokenName = getFieldValue(root_cert, 'tokenName');
 
                 // record the tls version Firefox ended up negotiating
                 result.protocolVersion = getFieldValue(sslStatus, 'protocolVersion');
@@ -168,7 +170,7 @@ function hasUserSetPreference() {
                 value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
                 isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
             },
-            hasNonBuiltInRootCA: hasNonBuiltInRootCertificate()
+            isNonBuiltInRootCertInstalled: isNonBuiltInRootCertInstalled()
         });
 
         return true;
@@ -177,7 +179,7 @@ function hasUserSetPreference() {
     return false;
 }
 
-function hasNonBuiltInRootCertificate() {
+function isNonBuiltInRootCertInstalled() {
     let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
     var iter = certDB.getCerts().getEnumerator();
@@ -187,6 +189,8 @@ function hasNonBuiltInRootCertificate() {
 
         if (getFieldValue(cert, 'issuer') === null &&
             getFieldValue(cert, 'isBuiltInRoot') === false &&
+            // There are some root certificates that are built-in but their isBuiltInRoot is false.
+            // That is why we check their tokenName as well
             getFieldValue(cert, 'tokenName').toLowerCase() !== "Builtin Object Token".toLowerCase()) {
             return true;
         }
@@ -217,7 +221,7 @@ function install() {
         TelemetryController.submitExternalPing("tls13-middlebox", {
             defaultMaxVersion: defaultMaxVersion,
             defaultFallbackLimit: defaultFallbackLimit,
-            hasNonBuiltInRootCA: hasNonBuiltInRootCertificate(),
+            isNonBuiltInRootCertInstalled: isNonBuiltInRootCertInstalled(),
             tests: result
         });
     });
