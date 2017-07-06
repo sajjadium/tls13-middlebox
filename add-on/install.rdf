@@ -12,14 +12,14 @@
     <em:targetApplication>
       <Description>
         <em:id>{0C3A0962-5DB7-11E7-A765-68B77FA7C656}</em:id>
-        <em:minVersion>50</em:minVersion>
-        <em:maxVersion>*</em:maxVersion>
+        <em:minVersion>54.*</em:minVersion>
+        <em:maxVersion>56.*</em:maxVersion>
       </Description>
     </em:targetApplication>
 
     <!-- Front End MetaData -->
     <em:name>TLS 1.3 Compatibility Testing of Middleboxes</em:name>
     <em:description>TLS 1.3 Compatibility Testing of Middleboxes</em:description>
-    <em:aboutURL></em:aboutURL>
+    <em:aboutURL>https://bugzilla.mozilla.org/show_bug.cgi?id=1378978</em:aboutURL>
   </Description>
 </RDF>
