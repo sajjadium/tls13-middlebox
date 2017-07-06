@@ -93,6 +93,7 @@ async function getInfo(xhr) {
     if (securityInfo instanceof Ci.nsITransportSecurityInfo) {
       securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
+      // extract security state and error code by which we can identify the reasons the connection failed
       result.securityState = getFieldValue(securityInfo, "securityState");
       result.errorCode = getFieldValue(securityInfo, "errorCode");
     }
@@ -101,31 +102,24 @@ async function getInfo(xhr) {
       securityInfo.QueryInterface(Ci.nsISSLStatusProvider);
       let sslStatus = getFieldValue(securityInfo, "SSLStatus");
 
-      console.log(securityInfo);
-
       if (sslStatus) {
         sslStatus.QueryInterface(Ci.nsISSLStatus);
 
-// let iter = securityInfo.failedCertChain.getEnumerator();
+        // in case cert verification failed, we need to extract the cert chain from failedCertChain attribute
+        // otherwise, we extract cert chain using certDB.asyncVerifyCertAtTime API
+        let chain = null;
 
-// while (iter.hasMoreElements()) {
-//   let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
+        if (getFieldValue(securityInfo, "failedCertChain")) {
+          chain = nsIX509CertListToArray(securityInfo.failedCertChain);
+        } else {
+          chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
+        }
 
-//   console.log(cert);
+        // extracting sha256 fingerprint for the leaf cert in the chain
+        result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
 
-//   // let chain = await extractCertChain(cert, CERT_USAGE_SSL_SERVER);
-
-//   // console.log(chain);
-// }
-
-        let serverCert = getFieldValue(sslStatus, "serverCert");
-
-        // extracting sha256 fingerprint for the leaf cert
-        result.serverCertSha256Fingerprint = getFieldValue(serverCert, "sha256Fingerprint");
-
-        let chain = await extractCertChain(serverCert, CERT_USAGE_SSL_SERVER);
-        console.log(chain);
-        result.rootCertIsBuiltIn = chain.length > 0 ? getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
+        // check the root cert to see if it is builtin certificate
+        result.isBuiltInRoot = (chain !== null && chain.length > 0) ? getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
 
         // record the tls version Firefox ended up negotiating
         result.protocolVersion = getFieldValue(sslStatus, "protocolVersion");
@@ -146,6 +140,7 @@ function makeRequest(config) {
         let output = Object.assign({"result": {"event": event, "responseCode": xhr.status}}, config);
         output.result = Object.assign(output.result, info);
         resolve(output);
+
         return true;
       }).catch();
     }
@@ -183,7 +178,7 @@ function makeRequest(config) {
 
       xhr.send();
     } catch (ex) {
-      resolve(Object.assign({result: {event: "exception", description: ex.toSource()}}, config));
+      resolve(Object.assign({result: {"event": "exception", "description": ex.toSource()}}, config));
     }
   });
 }
