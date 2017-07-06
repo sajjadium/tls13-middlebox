@@ -12,6 +12,8 @@ const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
 
 const XHR_TIMEOUT = 10000;
 
+const TELEMETRY_PING_NAME = "tls13-middlebox-testing";
+
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Preferences.jsm");
@@ -224,7 +226,7 @@ function hasUserSetPreference() {
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      TelemetryController.submitExternalPing("tls13-middlebox", {
+      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
         maxVersion: {
           value: readonly_prefs.get(VERSION_MAX_PREF),
           isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
@@ -268,7 +270,7 @@ function install() {
 
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      TelemetryController.submitExternalPing("tls13-middlebox", {
+      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
         "defaultMaxVersion": defaultMaxVersion,
         "defaultFallbackLimit": defaultFallbackLimit,
         "isNonBuiltInRootCertInstalled": non_builtin_result,
