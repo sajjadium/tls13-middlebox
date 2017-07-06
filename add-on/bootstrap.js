@@ -18,6 +18,15 @@ let configurations = [
   {maxVersion: 3, fallbackLimit: 3, website: "control.tls12.com"}
 ];
 
+const CERT_USAGE_SSL_CLIENT      = 0x0001;
+const CERT_USAGE_SSL_SERVER      = 0x0002;
+const CERT_USAGE_SSL_CA          = 0x0008;
+const CERT_USAGE_EMAIL_SIGNER    = 0x0010;
+const CERT_USAGE_EMAIL_RECIPIENT = 0x0020;
+const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
+
+let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+
 // some fields are not available sometimes, so we have to catch the errors and return undefined.
 function getFieldValue(obj, name) {
   try {
@@ -27,31 +36,41 @@ function getFieldValue(obj, name) {
   }
 }
 
-// extracting the root certificate from the chain
-function extractRootCert(cert) {
-  let root_cert = cert;
+// enumerate nsIX509CertList data structure and put elements in the array
+function nsIX509CertListToArray(list) {
+  let array = [];
 
-  while (getFieldValue(root_cert, "issuer")) {
-    root_cert = getFieldValue(root_cert, "issuer");
+  let iter = list.getEnumerator();
+
+  while (iter.hasMoreElements()) {
+    array.push(iter.getNext().QueryInterface(Ci.nsIX509Cert));
   }
 
-  return root_cert;
+  return array;
+}
+
+// veries the cert using either SSL_SERVER or SSL_CA usages and extracts the chain
+// returns null in case an error occurs
+function getCertChain(cert, usage) {
+  return new Promise((resolve, reject) => {
+    certDB.asyncVerifyCertAtTime(cert, usage, 0, null, Date.now() / 1000, (aPRErrorCode, aVerifiedChain, aHasEVPolicy) => {
+      if (aPRErrorCode === 0) {
+        resolve(nsIX509CertListToArray(aVerifiedChain));
+      } else {
+        resolve(null);
+      }
+    });
+  });
 }
 
 // returns true if there is at least one non-builtin root certificate is installed
-function isNonBuiltInRootCertInstalled() {
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+async function isNonBuiltInRootCertInstalled() {
+  let certs = nsIX509CertListToArray(certDB.getCerts());
 
-  let iter = certDB.getCerts().getEnumerator();
+  for (let cert of certs) {
+    let chain = await getCertChain(cert, CERT_USAGE_SSL_CA);
 
-  while (iter.hasMoreElements()) {
-    let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
-
-    if (getFieldValue(cert, "issuer") === null &&
-      getFieldValue(cert, "isBuiltInRoot") === false &&
-      // There are some root certificates that are built-in but their isBuiltInRoot is false.
-      // That is why we check their tokenName as well
-      getFieldValue(cert, "tokenName").toLowerCase() !== "Builtin Object Token".toLowerCase()) {
+    if (chain !== null && chain.length === 1 && !chain[0].isBuiltInRoot) {
       return true;
     }
   }
@@ -59,7 +78,7 @@ function isNonBuiltInRootCertInstalled() {
   return false;
 }
 
-function getInfo(xhr) {
+async function getInfo(xhr) {
   let result = {};
 
   try {
@@ -75,28 +94,38 @@ function getInfo(xhr) {
       securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
 
       result.securityState = getFieldValue(securityInfo, "securityState");
-
-      // Error message on connection failure. I am not sure if we can get this error message using status code.
-      // It is safer to collect this information as well.
-      result.errorMessage = getFieldValue(securityInfo, "errorMessage");
+      result.errorCode = getFieldValue(securityInfo, "errorCode");
     }
 
     if (securityInfo instanceof Ci.nsISSLStatusProvider) {
       securityInfo.QueryInterface(Ci.nsISSLStatusProvider);
-      let sslStatus = securityInfo.SSLStatus;
+      let sslStatus = getFieldValue(securityInfo, "SSLStatus");
+
+      console.log(securityInfo);
 
       if (sslStatus) {
         sslStatus.QueryInterface(Ci.nsISSLStatus);
 
+// let iter = securityInfo.failedCertChain.getEnumerator();
+
+// while (iter.hasMoreElements()) {
+//   let cert = iter.getNext().QueryInterface(Ci.nsIX509Cert);
+
+//   console.log(cert);
+
+//   // let chain = await extractCertChain(cert, CERT_USAGE_SSL_SERVER);
+
+//   // console.log(chain);
+// }
+
+        let serverCert = getFieldValue(sslStatus, "serverCert");
+
         // extracting sha256 fingerprint for the leaf cert
-        result.serverCertSha256Fingerprint = getFieldValue(sslStatus.serverCert, "sha256Fingerprint");
+        result.serverCertSha256Fingerprint = getFieldValue(serverCert, "sha256Fingerprint");
 
-        let root_cert = extractRootCert(sslStatus.serverCert);
-
-        // if the root certificate is not built-in, it means that there is middlebox on the way
-        // we need both of them to identify whether it is truly a built-in root certificate
-        result.rootCertIsBuiltIn = getFieldValue(root_cert, "isBuiltInRoot");
-        result.rootCertTokenName = getFieldValue(root_cert, "tokenName");
+        let chain = await extractCertChain(serverCert, CERT_USAGE_SSL_SERVER);
+        console.log(chain);
+        result.rootCertIsBuiltIn = chain.length > 0 ? getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
 
         // record the tls version Firefox ended up negotiating
         result.protocolVersion = getFieldValue(sslStatus, "protocolVersion");
@@ -113,9 +142,12 @@ function makeRequest(config) {
   return new Promise((resolve, reject) => {
     // put together the configuration and the info collected from the connection
     function reportResult(event, xhr) {
-      let output = Object.assign({"result": {"event": event, "responseCode": xhr.status}}, config);
-      output.result = Object.assign(output.result, getInfo(xhr));
-      resolve(output);
+      getInfo(xhr).then(info => {
+        let output = Object.assign({"result": {"event": event, "responseCode": xhr.status}}, config);
+        output.result = Object.assign(output.result, info);
+        resolve(output);
+        return true;
+      }).catch();
     }
 
     try {
@@ -189,17 +221,21 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
-    TelemetryController.submitExternalPing("tls13-middlebox", {
-      maxVersion: {
-        value: readonly_prefs.get(VERSION_MAX_PREF),
-        isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
-      },
-      fallbackLimit: {
-        value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
-        isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
-      },
-      isNonBuiltInRootCertInstalled: isNonBuiltInRootCertInstalled()
-    });
+    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+      TelemetryController.submitExternalPing("tls13-middlebox", {
+        maxVersion: {
+          value: readonly_prefs.get(VERSION_MAX_PREF),
+          isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
+        },
+        fallbackLimit: {
+          value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
+          isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+        },
+        isNonBuiltInRootCertInstalled: non_builtin_result
+      });
+
+      return true;
+    }).catch();
 
     return true;
   }
@@ -221,18 +257,22 @@ function install() {
   let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
   let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
-  runConfigurations().then(result => {
+  runConfigurations().then(tests_result => {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
     // report the test results to telemetry
-    TelemetryController.submitExternalPing("tls13-middlebox", {
-      "defaultMaxVersion": defaultMaxVersion,
-      "defaultFallbackLimit": defaultFallbackLimit,
-      "isNonBuiltInRootCertInstalled": isNonBuiltInRootCertInstalled(),
-      "tests": result
-    });
+    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+      TelemetryController.submitExternalPing("tls13-middlebox", {
+        "defaultMaxVersion": defaultMaxVersion,
+        "defaultFallbackLimit": defaultFallbackLimit,
+        "isNonBuiltInRootCertInstalled": non_builtin_result,
+        "tests": tests_result
+      });
+
+      return true;
+    }).catch();
 
     return true;
   }).catch();
