@@ -19,6 +19,7 @@ let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Timer.jsm");
 
 let readwrite_prefs = new Preferences({defaultBranch: true});
 
@@ -249,6 +250,53 @@ function hasUserSetPreference() {
   return false;
 }
 
+let popup_result = null;
+
+function showPopup(defaultMaxVersion, defaultFallbackLimit, tests_result, non_builtin_result) {
+  let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
+  let domWindow = wm.getMostRecentWindow("navigator:browser");
+
+  domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
+    "tls13-middlebox-popup",
+    "You have a MITM box in your network.",
+    null,
+    {
+      label: "Report to Mozilla",
+      accessKey: "R",
+      callback: function() {
+        TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+          "defaultMaxVersion": defaultMaxVersion,
+          "defaultFallbackLimit": defaultFallbackLimit,
+          "isNonBuiltInRootCertInstalled": non_builtin_result,
+          "tests": tests_result
+        });
+      }
+    },
+    [
+      {
+        label: "Dismiss",
+        accessKey: "D",
+        callback: function() {
+          TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+            "defaultMaxVersion": defaultMaxVersion,
+            "defaultFallbackLimit": defaultFallbackLimit,
+            "isNonBuiltInRootCertInstalled": non_builtin_result,
+            "tests": tests_result
+          });
+        }
+      }
+    ],
+    {
+      removeOnDismissal: true,
+      // eventCallback: function(reason) {
+      //   if (reason === "removed") {
+      //     popup_result = "dismissed";
+      //   }
+      // }
+    }
+  );
+}
+
 function startup() {
   // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
   if (hasUserSetPreference()) {
@@ -266,12 +314,20 @@ function startup() {
 
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        "defaultMaxVersion": defaultMaxVersion,
-        "defaultFallbackLimit": defaultFallbackLimit,
-        "isNonBuiltInRootCertInstalled": non_builtin_result,
-        "tests": tests_result
-      });
+      showPopup(defaultMaxVersion, defaultFallbackLimit, tests_result, non_builtin_result);
+
+      // setInterval(function() {
+      //   console.log(is_clicked);
+      // }, 5000);
+
+      // let timer = setInterval(function() {
+      //   try {
+      //     if (domWindow && domWindow.gBrowser && domWindow.gBrowser.selectedBrowser)
+      //         if (domWindow.PopupNotifications.getNotification(POPUP_NOTIFICATION_ID, domWindow.gBrowser.selectedBrowser) === null &&
+      //             is_clicked)
+      //           return;
+      //       return;
+      // }, 5000);
 
       return true;
     }).catch(err => {
