@@ -250,12 +250,15 @@ function hasUserSetPreference() {
   return false;
 }
 
+// show the popup notification to the user
 function askForUserPermission() {
   return new Promise((resolve, reject) => {
+    // get the current active 
     let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
-    let domWindow = wm.getMostRecentWindow("navigator:browser");
+    let active_window = wm.getMostRecentWindow("navigator:browser");
 
-    domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
+    // show the actual popup
+    active_window.PopupNotifications.show(active_window.gBrowser.selectedBrowser,
       "tls13-middlebox-popup",
       "You have a MITM box in your network.",
       null,
@@ -287,6 +290,7 @@ function askForUserPermission() {
   });
 }
 
+// keep showing the popup notification until the user gives his/her permission or denies our request
 async function isPermitted() {
   while (true) {
     let res = await askForUserPermission();
@@ -313,6 +317,7 @@ function startup() {
 
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+      // ask for user permission
       isPermitted().then(is_permitted => {
         if (is_permitted) {
           TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
@@ -322,6 +327,8 @@ function startup() {
             "tests": tests_result
           });
         }
+      }).catch(err => {
+        debug(err);
       });
 
       return true;
