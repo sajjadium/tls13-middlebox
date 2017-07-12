@@ -31,6 +31,15 @@ let configurations = [
 
 let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
+// generate random UUID for identifying probes uniquely
+function generateProbeId() {
+  let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
+  let uuid = uuidGenerator.generateUUID();
+  return uuid.toString();
+}
+
+let PROBE_ID = generateProbeId();
+
 function debug(msg) {
   console.log(msg); // eslint-disable-line no-console
 }
@@ -227,15 +236,17 @@ function hasUserSetPreference() {
     // reports the current values as well as whether they were set by the user
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
       TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        maxVersion: {
-          value: readonly_prefs.get(VERSION_MAX_PREF),
-          isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
+        "id": PROBE_ID,
+        "status": "aborted",
+        "maxVersion": {
+          "value": readonly_prefs.get(VERSION_MAX_PREF),
+          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
         },
-        fallbackLimit: {
-          value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
-          isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+        "fallbackLimit": {
+          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
+          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
         },
-        isNonBuiltInRootCertInstalled: non_builtin_result
+        "isNonBuiltInRootCertInstalled": non_builtin_result
       });
 
       return true;
@@ -250,6 +261,18 @@ function hasUserSetPreference() {
 }
 
 function startup() {
+}
+
+function shutdown() {
+}
+
+function install() {
+  // send start of the test probe
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+    "id": PROBE_ID,
+    "status": "started"
+  });
+
   // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
   if (hasUserSetPreference()) {
     return;
@@ -267,6 +290,8 @@ function startup() {
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
       TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+        "id": PROBE_ID,
+        "status": "finished",
         "defaultMaxVersion": defaultMaxVersion,
         "defaultFallbackLimit": defaultFallbackLimit,
         "isNonBuiltInRootCertInstalled": non_builtin_result,
@@ -280,13 +305,13 @@ function startup() {
 
     return true;
   }).catch(err => {
+    // restore the default values after the experiment is over
+    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
+    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+
     debug(err);
   });
 }
 
-function shutdown() {}
-
-function install() {
+function uninstall() {
 }
-
-function uninstall() {}
