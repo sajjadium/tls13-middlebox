@@ -3,6 +3,8 @@
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
+const POPUP_NOTIFICATION_ID = "tls13-middlebox-popup";
+
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
 const CERT_USAGE_SSL_CA          = 0x0008;
@@ -45,6 +47,40 @@ function getFieldValue(obj, name) {
   }
 }
 
+function prettyPrintCert(cert) {
+  let info = {};
+
+  info = {
+    CN: cert.commonName,
+    O: cert.organization,
+    OU: cert.organizationalUnit,
+  };
+
+  // info.subject = {
+  //   commonName: cert.commonName,
+  //   organization: cert.organization,
+  //   organizationalUnit: cert.organizationalUnit,
+  // };
+
+  // info.issuer = {
+  //   commonName: cert.issuerCommonName,
+  //   organization: cert.issuerOrganization,
+  //   organizationUnit: cert.issuerOrganizationUnit,
+  // };
+
+  // info.validity = {
+  //   start: cert.validity.notBeforeLocalDay,
+  //   end: cert.validity.notAfterLocalDay,
+  // };
+
+  // info.fingerprint = {
+  //   sha1: cert.sha1Fingerprint,
+  //   sha256: cert.sha256Fingerprint,
+  // };
+
+  return JSON.stringify(info, null, "  ");
+}
+
 // enumerate nsIX509CertList data structure and put elements in the array
 function nsIX509CertListToArray(list) {
   let array = [];
@@ -54,6 +90,8 @@ function nsIX509CertListToArray(list) {
   while (iter.hasMoreElements()) {
     array.push(iter.getNext().QueryInterface(Ci.nsIX509Cert));
   }
+
+  // console.log(array[0].getRawDER({}));
 
   return array;
 }
@@ -73,18 +111,20 @@ function getCertChain(cert, usage) {
 }
 
 // returns true if there is at least one non-builtin root certificate is installed
-async function isNonBuiltInRootCertInstalled() {
+async function getNonBuiltInRootCertsInstalled() {
   let certs = nsIX509CertListToArray(certDB.getCerts());
+
+  let non_builtin_certs = [];
 
   for (let cert of certs) {
     let chain = await getCertChain(cert, CERT_USAGE_SSL_CA);
 
     if (chain !== null && chain.length === 1 && !chain[0].isBuiltInRoot) {
-      return true;
+      non_builtin_certs.push(cert);
     }
   }
 
-  return false;
+  return non_builtin_certs;
 }
 
 async function getInfo(xhr) {
@@ -116,19 +156,20 @@ async function getInfo(xhr) {
 
         // in case cert verification failed, we need to extract the cert chain from failedCertChain attribute
         // otherwise, we extract cert chain using certDB.asyncVerifyCertAtTime API
-        let chain = null;
+        result.chain = null;
 
         if (getFieldValue(securityInfo, "failedCertChain")) {
-          chain = nsIX509CertListToArray(securityInfo.failedCertChain);
+          result.chain = nsIX509CertListToArray(securityInfo.failedCertChain);
         } else {
-          chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
+          result.chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
         // extracting sha256 fingerprint for the leaf cert in the chain
-        result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
+        result.serverSha256Fingerprint = getFieldValue(result.chain[0], "sha256Fingerprint");
 
         // check the root cert to see if it is builtin certificate
-        result.isBuiltInRoot = (chain !== null && chain.length > 0) ? getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
+        result.isBuiltInRoot = (result.chain !== null && result.chain.length > 0) ? 
+                                getFieldValue(result.chain[result.chain.length - 1], "isBuiltInRoot") : null;
 
         // record the tls version Firefox ended up negotiating
         result.protocolVersion = getFieldValue(sslStatus, "protocolVersion");
@@ -226,7 +267,7 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
-    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
       TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
         maxVersion: {
           value: readonly_prefs.get(VERSION_MAX_PREF),
@@ -236,7 +277,7 @@ function hasUserSetPreference() {
           value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
           isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
         },
-        isNonBuiltInRootCertInstalled: non_builtin_result
+        isNonBuiltInRootCertInstalled: non_builtin_certs.length > 0
       });
 
       return true;
@@ -251,7 +292,7 @@ function hasUserSetPreference() {
 }
 
 // show the popup notification to the user
-function askForUserPermission() {
+function askForUserPermission(non_builtin_certs, tests_result) {
   return new Promise((resolve, reject) => {
     // get the current active 
     let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
@@ -259,7 +300,7 @@ function askForUserPermission() {
 
     // show the actual popup
     active_window.PopupNotifications.show(active_window.gBrowser.selectedBrowser,
-      "tls13-middlebox-popup",
+      POPUP_NOTIFICATION_ID,
       "You have a MITM box in your network.",
       null,
       {
@@ -271,8 +312,8 @@ function askForUserPermission() {
       },
       [
         {
-          label: "Dismiss",
-          accessKey: "D",
+          label: "Not Now",
+          accessKey: "N",
           callback: function() {
             resolve(false);
           }
@@ -281,6 +322,29 @@ function askForUserPermission() {
       {
         removeOnDismissal: true,
         eventCallback: function(reason) {
+          if (reason === "shown") {
+            let notification = active_window.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
+
+            if (!notification.querySelector("popupnotificationcontent")) {
+              let notificationcontent = active_window.document.createElement("popupnotificationcontent");
+              let privacyLinkElement = active_window.document.createElement("label");
+              // privacyLinkElement.innerHTML = "adsfasdfasdf \n asdfasasf"
+              // privacyLinkElement.className = "text-link";
+              // privacyLinkElement.setAttribute("useoriginprincipal", true);
+              // privacyLinkElement.setAttribute("href", "http://google.com");
+              // privacyLinkElement.setAttribute("value", "Learn more ...");
+              privacyLinkElement.setAttribute("value", non_builtin_certs.length > 0 ? prettyPrintCert(non_builtin_certs[0]) + "<br />" + "asdfasfasdf" : "");
+              notificationcontent.appendChild(privacyLinkElement);
+              // ele.setAttribute("dropmarkerhidden", false);
+              // ele.setAttribute("checkboxhidden", false);
+              // let link = active_window.document.createElement("a");
+              // link.innerHTML = "Learn more ...";
+              // link.setAttribute("href", "http://google.com");
+              // let link = active_window.document.createElement("a");
+              // active_window.console.log(link);
+              notification.append(notificationcontent);
+            }
+          }
           if (reason === "removed") {
             resolve(null);
           }
@@ -291,9 +355,9 @@ function askForUserPermission() {
 }
 
 // keep showing the popup notification until the user gives his/her permission or denies our request
-async function isPermitted() {
+async function isPermitted(non_builtin_certs, tests_result) {
   while (true) {
-    let res = await askForUserPermission();
+    let res = await askForUserPermission(non_builtin_certs, tests_result);
 
     if (res !== null)
       return res;
@@ -316,14 +380,14 @@ function startup() {
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
     // report the test results to telemetry
-    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
       // ask for user permission
-      isPermitted().then(is_permitted => {
+      isPermitted(non_builtin_certs, tests_result).then(is_permitted => {
         if (is_permitted) {
           TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
             "defaultMaxVersion": defaultMaxVersion,
             "defaultFallbackLimit": defaultFallbackLimit,
-            "isNonBuiltInRootCertInstalled": non_builtin_result,
+            "isNonBuiltInRootCertInstalled": non_builtin_certs.length > 0,
             "tests": tests_result
           });
         }
