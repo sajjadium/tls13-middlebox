@@ -296,7 +296,16 @@ function askForUserPermission(non_builtin_certs, tests_result) {
   return new Promise((resolve, reject) => {
     // get the current active 
     let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
+    // let enumerator = wm.getXULWindowEnumerator("navigator:browser");
+    // while(enumerator.hasMoreElements()) {
+    //   var win = enumerator.getNext().QueryInterface(Ci.nsIXULWindow);
+    //   win.createNewWindow(1).showModal();
+    //   break;
+    // }
+
     let active_window = wm.getMostRecentWindow("navigator:browser");
+    console.log(active_window);
+    console.log(active_window.gBrowser);
 
     // show the actual popup
     active_window.PopupNotifications.show(active_window.gBrowser.selectedBrowser,
@@ -327,25 +336,24 @@ function askForUserPermission(non_builtin_certs, tests_result) {
 
             if (!notification.querySelector("popupnotificationcontent")) {
               let notificationcontent = active_window.document.createElement("popupnotificationcontent");
-              let privacyLinkElement = active_window.document.createElement("label");
-              // privacyLinkElement.innerHTML = "adsfasdfasdf \n asdfasasf"
-              // privacyLinkElement.className = "text-link";
-              // privacyLinkElement.setAttribute("useoriginprincipal", true);
-              // privacyLinkElement.setAttribute("href", "http://google.com");
-              // privacyLinkElement.setAttribute("value", "Learn more ...");
-              privacyLinkElement.setAttribute("value", non_builtin_certs.length > 0 ? prettyPrintCert(non_builtin_certs[0]) + "<br />" + "asdfasfasdf" : "");
-              notificationcontent.appendChild(privacyLinkElement);
-              // ele.setAttribute("dropmarkerhidden", false);
-              // ele.setAttribute("checkboxhidden", false);
-              // let link = active_window.document.createElement("a");
-              // link.innerHTML = "Learn more ...";
-              // link.setAttribute("href", "http://google.com");
-              // let link = active_window.document.createElement("a");
-              // active_window.console.log(link);
+              let learn_more_link = active_window.document.createElement("label");
+              learn_more_link.className = "text-link";
+              learn_more_link.setAttribute("useoriginprincipal", true);
+              learn_more_link.onclick = function() {
+                // let tab = active_window.gBrowser.addTab(null);
+                // active_window.console.log(tab);
+
+                // let e = tab.ownerDocument.createElement('button');
+                // tab.ownerDocument.documentElement.appendChild(e);
+
+                // active_window.gBrowser.selectedTab = tab;
+                // active_window.openDialog("http://google.com", "dlg", "");
+              }
+              learn_more_link.setAttribute("value", "Learn more ...");
+              notificationcontent.appendChild(learn_more_link);
               notification.append(notificationcontent);
             }
-          }
-          if (reason === "removed") {
+          } else if (reason === "removed") {
             resolve(null);
           }
         }
@@ -359,8 +367,9 @@ async function isPermitted(non_builtin_certs, tests_result) {
   while (true) {
     let res = await askForUserPermission(non_builtin_certs, tests_result);
 
-    if (res !== null)
+    if (res !== null) {
       return res;
+    }
   }
 }
 
