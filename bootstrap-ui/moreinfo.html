@@ -1,0 +1,15 @@
+<html>
+<body>
+hiiiiiiiii
+
+<script>
+    window.addEventListener("message", function(e) {
+      console.log(e);
+      let b= document.createElement("button");
+      b.innerHTML = e.data;
+      document.body.appendChild(b);
+    });
+</script>
+</body>
+</html>
+

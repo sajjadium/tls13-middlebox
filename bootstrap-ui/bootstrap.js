@@ -330,16 +330,29 @@ function askForUserPermission(non_builtin_certs, tests_result) {
                 let learn_more_link = domWindow.document.createElement("label");
                 learn_more_link.className = "text-link";
                 learn_more_link.setAttribute("useoriginprincipal", true);
+                learn_more_link.setAttribute("value", "Learn more ...");
+
                 learn_more_link.onclick = function() {
                   let win = domWindow.open(
-                    "",
+                    "chrome://tls13-middlebox/content/moreinfo.html",
                     "certinfo_popup",
                     "menubar=no,location=no,resizable=no,status=no"
                   );
-                  win.document.body.innerHTML = "<div>hello world</div>";
-                  domWindow.console.log(win);
+
+                  setTimeout(function() {
+                    // domWindow.console.log(win.document.documentElement.outerHTML);
+                    // win.document.body.appendChild(win.document.createElement('button'));
+                    win.postMessage("adfasdfasdfasdfasd", "*");
+                  }, 2000);
+
+                  win.document.addEventListener("DOMContentLoaded", function() {
+                    domWindow.console.log('ffffff');
+                    // win.document.body.appendChild(win.document.createElement('button'));
+                  }, false);
+
+                  // domWindow.console.log(win);
                 }
-                learn_more_link.setAttribute("value", "Learn more ...");
+
                 notificationcontent.appendChild(learn_more_link);
                 notification.append(notificationcontent);
               }
