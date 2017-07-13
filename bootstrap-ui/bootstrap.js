@@ -296,16 +296,8 @@ function askForUserPermission(non_builtin_certs, tests_result) {
   return new Promise((resolve, reject) => {
     // get the current active 
     let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
-    // let enumerator = wm.getXULWindowEnumerator("navigator:browser");
-    // while(enumerator.hasMoreElements()) {
-    //   var win = enumerator.getNext().QueryInterface(Ci.nsIXULWindow);
-    //   win.createNewWindow(1).showModal();
-    //   break;
-    // }
 
     let active_window = wm.getMostRecentWindow("navigator:browser");
-    console.log(active_window);
-    console.log(active_window.gBrowser);
 
     // show the actual popup
     active_window.PopupNotifications.show(active_window.gBrowser.selectedBrowser,
@@ -331,29 +323,31 @@ function askForUserPermission(non_builtin_certs, tests_result) {
       {
         removeOnDismissal: true,
         eventCallback: function(reason) {
-          if (reason === "shown") {
-            let notification = active_window.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
+          try {
+            if (reason === "shown") {
+              let notification = active_window.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
 
-            if (!notification.querySelector("popupnotificationcontent")) {
-              let notificationcontent = active_window.document.createElement("popupnotificationcontent");
-              let learn_more_link = active_window.document.createElement("label");
-              learn_more_link.className = "text-link";
-              learn_more_link.setAttribute("useoriginprincipal", true);
-              learn_more_link.onclick = function() {
-                // let tab = active_window.gBrowser.addTab(null);
-                // active_window.console.log(tab);
-
-                // let e = tab.ownerDocument.createElement('button');
-                // tab.ownerDocument.documentElement.appendChild(e);
-
-                // active_window.gBrowser.selectedTab = tab;
-                // active_window.openDialog("http://google.com", "dlg", "");
+              if (!notification.querySelector("popupnotificationcontent")) {
+                let notificationcontent = active_window.document.createElement("popupnotificationcontent");
+                let learn_more_link = active_window.document.createElement("label");
+                learn_more_link.className = "text-link";
+                learn_more_link.setAttribute("useoriginprincipal", true);
+                learn_more_link.onclick = function() {
+                  active_window.open("http://google.com", "certinfo", "height=1000,width=800,centerscreen,menubar=no,location=no");
+                  // let tab = active_window.gBrowser.addTab(null);
+                  // let e = tab.ownerDocument.createElement('button');
+                  // tab.ownerDocument.documentElement.appendChild(e);
+                  // active_window.gBrowser.selectedTab = tab;
+                }
+                learn_more_link.setAttribute("value", "Learn more ...");
+                notificationcontent.appendChild(learn_more_link);
+                notification.append(notificationcontent);
               }
-              learn_more_link.setAttribute("value", "Learn more ...");
-              notificationcontent.appendChild(learn_more_link);
-              notification.append(notificationcontent);
+            } else if (reason === "removed") {
+              resolve(null);
             }
-          } else if (reason === "removed") {
+          } catch (err) {
+            active_window.console.log(err);
             resolve(null);
           }
         }
