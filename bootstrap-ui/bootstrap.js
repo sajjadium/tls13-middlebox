@@ -333,11 +333,28 @@ function askForUserPermission(non_builtin_certs, tests_result) {
                 learn_more_link.className = "text-link";
                 learn_more_link.setAttribute("useoriginprincipal", true);
                 learn_more_link.onclick = function() {
-                  active_window.open("http://google.com", "certinfo", "height=1000,width=800,centerscreen,menubar=no,location=no");
-                  // let tab = active_window.gBrowser.addTab(null);
-                  // let e = tab.ownerDocument.createElement('button');
-                  // tab.ownerDocument.documentElement.appendChild(e);
-                  // active_window.gBrowser.selectedTab = tab;
+                  let tab = active_window.gBrowser.addTab("chrome://tls13-middlebox/content/certinfo.html");
+                  active_window.gBrowser.selectedTab = tab;
+                  active_window.gBrowser.ownerDocument.defaultView.focus(); 
+                  active_window.gBrowser.focus();
+                  active_window.focus();
+
+                  active_window.console.log(active_window.content.document);
+                  // let tab = active_window.delayedOpenTab("http://mozilla.com/", null, null, null, null);
+                  // active_window.console.log(tab);
+
+                  // var tabBrowser = active_window.gBrowser.getBrowserForTab(tab);
+                  // setTimeout(function () {
+                  //   active_window.console.log(tabBrowser.ownerDocument);
+                  //   tabBrowser.ownerDocument.body.innerHTML = "<div>hello world</div>";
+                  // }, 5000);  
+                  // active_window.console.log(tab);
+                  // active_window.console.log(tabBrowser);
+                  // // tab.contentDocument.body.innerHTML = "<div>hello world</div>";
+
+                  // // let tab = active_window.gBrowser.addTab("http://google.com");
+                  // let e = tab.createElement('button');
+                  // tab.documentElement.appendChild(e);
                 }
                 learn_more_link.setAttribute("value", "Learn more ...");
                 notificationcontent.appendChild(learn_more_link);
