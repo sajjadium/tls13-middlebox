@@ -19,3 +19,12 @@ browser.notifications.onClicked.addListener(function() {
 	}, function(error) {
 	});
 });
+
+browser.notifications.onClosed.addListener(function() {
+	console.log('adsfasdfasdf');
+	// browser.notifications.create("notification", {
+	// 	"type": "basic",
+	// 	"title": "TLS failure",
+	// 	"message": "There is a problem. Please click on this notification to show the full message."
+	// });
+});
