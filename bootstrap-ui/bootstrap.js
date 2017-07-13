@@ -339,16 +339,16 @@ function askForUserPermission(non_builtin_certs, tests_result) {
                     "menubar=no,location=no,resizable=no,status=no"
                   );
 
-                  setTimeout(function() {
+                  // setTimeout(function() {
                     // domWindow.console.log(win.document.documentElement.outerHTML);
                     // win.document.body.appendChild(win.document.createElement('button'));
-                    win.postMessage("adfasdfasdfasdfasd", "*");
-                  }, 2000);
+                    win.postMessage("vvvvvvvv", "*");
+                  // }, 2000);
 
-                  win.document.addEventListener("DOMContentLoaded", function() {
-                    domWindow.console.log('ffffff');
+                  // win.document.addEventListener("DOMContentLoaded", function() {
+                    // domWindow.console.log('ffffff');
                     // win.document.body.appendChild(win.document.createElement('button'));
-                  }, false);
+                  // }, false);
 
                   // domWindow.console.log(win);
                 }
