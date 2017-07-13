@@ -34,6 +34,9 @@ let configurations = [
 
 let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
+let windowMediator = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
+let domWindow = windowMediator.getMostRecentWindow("navigator:browser");
+
 function debug(msg) {
   console.log(msg); // eslint-disable-line no-console
 }
@@ -294,13 +297,8 @@ function hasUserSetPreference() {
 // show the popup notification to the user
 function askForUserPermission(non_builtin_certs, tests_result) {
   return new Promise((resolve, reject) => {
-    // get the current active 
-    let wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
-
-    let active_window = wm.getMostRecentWindow("navigator:browser");
-
     // show the actual popup
-    active_window.PopupNotifications.show(active_window.gBrowser.selectedBrowser,
+    domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
       POPUP_NOTIFICATION_ID,
       "You have a MITM box in your network.",
       null,
@@ -325,36 +323,21 @@ function askForUserPermission(non_builtin_certs, tests_result) {
         eventCallback: function(reason) {
           try {
             if (reason === "shown") {
-              let notification = active_window.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
+              let notification = domWindow.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
 
               if (!notification.querySelector("popupnotificationcontent")) {
-                let notificationcontent = active_window.document.createElement("popupnotificationcontent");
-                let learn_more_link = active_window.document.createElement("label");
+                let notificationcontent = domWindow.document.createElement("popupnotificationcontent");
+                let learn_more_link = domWindow.document.createElement("label");
                 learn_more_link.className = "text-link";
                 learn_more_link.setAttribute("useoriginprincipal", true);
                 learn_more_link.onclick = function() {
-                  let tab = active_window.gBrowser.addTab("chrome://tls13-middlebox/content/certinfo.html");
-                  active_window.gBrowser.selectedTab = tab;
-                  active_window.gBrowser.ownerDocument.defaultView.focus(); 
-                  active_window.gBrowser.focus();
-                  active_window.focus();
-
-                  active_window.console.log(active_window.content.document);
-                  // let tab = active_window.delayedOpenTab("http://mozilla.com/", null, null, null, null);
-                  // active_window.console.log(tab);
-
-                  // var tabBrowser = active_window.gBrowser.getBrowserForTab(tab);
-                  // setTimeout(function () {
-                  //   active_window.console.log(tabBrowser.ownerDocument);
-                  //   tabBrowser.ownerDocument.body.innerHTML = "<div>hello world</div>";
-                  // }, 5000);  
-                  // active_window.console.log(tab);
-                  // active_window.console.log(tabBrowser);
-                  // // tab.contentDocument.body.innerHTML = "<div>hello world</div>";
-
-                  // // let tab = active_window.gBrowser.addTab("http://google.com");
-                  // let e = tab.createElement('button');
-                  // tab.documentElement.appendChild(e);
+                  let win = domWindow.open(
+                    "",
+                    "certinfo_popup",
+                    "menubar=no,location=no,resizable=no,status=no"
+                  );
+                  win.document.body.innerHTML = "<div>hello world</div>";
+                  domWindow.console.log(win);
                 }
                 learn_more_link.setAttribute("value", "Learn more ...");
                 notificationcontent.appendChild(learn_more_link);
@@ -364,7 +347,7 @@ function askForUserPermission(non_builtin_certs, tests_result) {
               resolve(null);
             }
           } catch (err) {
-            active_window.console.log(err);
+            domWindow.console.log(err);
             resolve(null);
           }
         }
