@@ -334,23 +334,10 @@ function askForUserPermission(non_builtin_certs, tests_result) {
 
                 learn_more_link.onclick = function() {
                   let win = domWindow.open(
-                    "chrome://tls13-middlebox/content/moreinfo.html",
+                    "chrome://tls13-middlebox/content/moreinfo.html?data=ali",
                     "certinfo_popup",
                     "menubar=no,location=no,resizable=no,status=no"
                   );
-
-                  // setTimeout(function() {
-                    // domWindow.console.log(win.document.documentElement.outerHTML);
-                    // win.document.body.appendChild(win.document.createElement('button'));
-                    win.postMessage("vvvvvvvv", "*");
-                  // }, 2000);
-
-                  // win.document.addEventListener("DOMContentLoaded", function() {
-                    // domWindow.console.log('ffffff');
-                    // win.document.body.appendChild(win.document.createElement('button'));
-                  // }, false);
-
-                  // domWindow.console.log(win);
                 }
 
                 notificationcontent.appendChild(learn_more_link);

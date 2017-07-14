@@ -3,12 +3,10 @@
 hiiiiiiiii
 
 <script>
-    window.addEventListener("message", function(e) {
-      console.log(e);
-      let b= document.createElement("button");
-      b.innerHTML = e.data;
-      document.body.appendChild(b);
-    });
+    let msg = new URL(window.location.href).searchParams.get("data");
+    let b= document.createElement("button");
+    b.innerHTML = msg;
+    document.body.appendChild(b);
 </script>
 </body>
 </html>
