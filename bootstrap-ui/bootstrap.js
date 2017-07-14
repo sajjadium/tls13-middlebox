@@ -173,7 +173,22 @@ async function getInfo(xhr) {
           chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
-        // console.log(array[0].getRawDER({}));
+        let der = chain[0].getRawDER({});
+
+        function buildBase64DER(chars) {
+          try {
+            let result = "";
+            for (let i = 0; i < chars.length; i++)
+              result += String.fromCharCode(chars[i]);
+
+            return domWindow.btoa(result);
+          } catch(err) {
+            console.log(err);
+          }
+        }
+
+        let a = buildBase64DER(der);
+        console.log(a);
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -408,15 +423,18 @@ function install() {
     getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
       // ask for user permission
       isPermitted(non_builtin_certs, tests_result).then(is_permitted => {
+        let final_output = {
+          "id": PROBE_ID,
+          "status": "finished",
+          "defaultMaxVersion": defaultMaxVersion,
+          "defaultFallbackLimit": defaultFallbackLimit,
+          "tests": tests_result
+        };
+
         if (is_permitted) {
-          TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-            "id": PROBE_ID,
-            "status": "finished",
-            "defaultMaxVersion": defaultMaxVersion,
-            "defaultFallbackLimit": defaultFallbackLimit,
-            "isNonBuiltInRootCertInstalled": non_builtin_certs.length > 0,
-            "tests": tests_result
-          });
+          final_output["nonBuiltInRootCertificates"] = non_builtin_certs;
+        } else {
+          final_output["isNonBuiltInRootCertInstalled"] = non_builtin_certs.length > 0;
         }
       }).catch(err => {
         debug(err);
