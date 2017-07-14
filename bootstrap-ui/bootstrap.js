@@ -136,6 +136,15 @@ async function getNonBuiltInRootCertsInstalled() {
   return non_builtin_certs;
 }
 
+function byteArrayToBase64(bytes) {
+  let str = "";
+
+  for (let b of bytes)
+    str += String.fromCharCode(b);
+
+  return domWindow.btoa(str);
+}
+
 async function getInfo(xhr) {
   let result = {};
 
@@ -173,22 +182,19 @@ async function getInfo(xhr) {
           chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
-        let der = chain[0].getRawDER({});
+        result.certChain = null;
 
-        function buildBase64DER(chars) {
-          try {
-            let result = "";
-            for (let i = 0; i < chars.length; i++)
-              result += String.fromCharCode(chars[i]);
+        if (chain !== null) {
+          result.certChain = [];
 
-            return domWindow.btoa(result);
-          } catch(err) {
-            console.log(err);
+          for (let cert of chain) {
+            result.certChain.push(byteArrayToBase64(cert.getRawDER({})));
           }
         }
 
-        let a = buildBase64DER(der);
-        console.log(a);
+        console.log(chain[0]);
+
+        console.log(sslStatus);
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -197,13 +203,30 @@ async function getInfo(xhr) {
         result.isBuiltInRoot = (chain !== null && chain.length > 0) ? 
                                 getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
 
-        // record the tls version Firefox ended up negotiating
-        result.protocolVersion = getFieldValue(sslStatus, "protocolVersion");
+        // record the detailed info about SSL connection Firefox ended up negotiating
+        let ssl_status_fields = [
+          "certificateTransparencyStatus",
+          "cipherName",
+          "isDomainMismatch",
+          "isExtendedValidation",
+          "isNotValidAtThisTime",
+          "isUntrusted",
+          "keyLength",
+          "protocolVersion",
+          "secretKeyLength"
+        ];
+
+        for (let field of ssl_status_fields) {
+          result[field] = getFieldValue(sslStatus, field);
+        }
       }
     }
   } catch (ex) {
+    debug(ex);
     result.exception = ex.message;
   }
+
+  console.log(result);
 
   return result;
 }
@@ -287,40 +310,15 @@ async function runConfigurations() {
   return result;
 }
 
-// check if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-function hasUserSetPreference() {
-  let readonly_prefs = new Preferences();
-
-  if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
-    // reports the current values as well as whether they were set by the user
-    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
-      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        "id": PROBE_ID,
-        "status": "aborted",
-        "maxVersion": {
-          "value": readonly_prefs.get(VERSION_MAX_PREF),
-          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
-        },
-        "fallbackLimit": {
-          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
-          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
-        },
-        "isNonBuiltInRootCertInstalled": non_builtin_certs.length > 0
-      });
-
-      return true;
-    }).catch(err => {
-      debug(err);
-    });
-
-    return true;
-  }
-
-  return false;
+function sendToTelemetry(status, data) {
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
+    "id": PROBE_ID,
+    "status": status
+  }, data));
 }
 
 // show the popup notification to the user
-function askForUserPermission(non_builtin_certs, tests_result) {
+function askForUserPermission(non_builtin_root_cert) {
   return new Promise((resolve, reject) => {
     // show the actual popup
     domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
@@ -382,14 +380,58 @@ function askForUserPermission(non_builtin_certs, tests_result) {
 }
 
 // keep showing the popup notification until the user gives his/her permission or denies our request
-async function isPermitted(non_builtin_certs, tests_result) {
+async function isPermitted(non_builtin_root_cert) {
   while (true) {
-    let res = await askForUserPermission(non_builtin_certs, tests_result);
+    let res = await askForUserPermission(non_builtin_root_cert);
 
     if (res !== null) {
       return res;
     }
   }
+}
+
+// check if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+function hasUserSetPreference() {
+  let readonly_prefs = new Preferences();
+
+  if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
+    // reports the current values as well as whether they were set by the user
+    getNonBuiltInRootCertsInstalled().then(non_builtin_root_certs => {
+      let final_output = {
+        "maxVersion": {
+          "value": readonly_prefs.get(VERSION_MAX_PREF),
+          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
+        },
+        "fallbackLimit": {
+          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
+          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+        }
+      };
+
+      if (non_builtin_root_certs.length > 0) {
+        isPermitted(non_builtin_root_certs[0]).then(is_permitted => {
+          if (is_permitted) {
+            final_output["nonBuiltInRootCertificates"] = non_builtin_root_certs;
+          } else {
+            final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
+          }
+
+          sendToTelemetry("aborted", final_output);
+        }).catch(err => {
+          debug(err);
+          final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
+          sendToTelemetry("aborted", final_output);
+        });
+
+      return true;
+    }).catch(err => {
+      debug(err);
+    });
+
+    return true;
+  }
+
+  return false;
 }
 
 function startup() {
@@ -424,8 +466,6 @@ function install() {
       // ask for user permission
       isPermitted(non_builtin_certs, tests_result).then(is_permitted => {
         let final_output = {
-          "id": PROBE_ID,
-          "status": "finished",
           "defaultMaxVersion": defaultMaxVersion,
           "defaultFallbackLimit": defaultFallbackLimit,
           "tests": tests_result
@@ -435,6 +475,10 @@ function install() {
           final_output["nonBuiltInRootCertificates"] = non_builtin_certs;
         } else {
           final_output["isNonBuiltInRootCertInstalled"] = non_builtin_certs.length > 0;
+
+          for (let tr of tests_result) {
+            delete tr["certChain"];
+          }
         }
       }).catch(err => {
         debug(err);
