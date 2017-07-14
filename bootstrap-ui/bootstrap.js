@@ -165,7 +165,7 @@ async function getInfo(xhr) {
 
         // in case cert verification failed, we need to extract the cert chain from failedCertChain attribute
         // otherwise, we extract cert chain using certDB.asyncVerifyCertAtTime API
-        chain = null;
+        let chain = null;
 
         if (getFieldValue(securityInfo, "failedCertChain")) {
           chain = nsIX509CertListToArray(securityInfo.failedCertChain);
@@ -278,7 +278,7 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
-    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
       TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
         "id": PROBE_ID,
         "status": "aborted",
@@ -290,7 +290,7 @@ function hasUserSetPreference() {
           "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
           "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
         },
-        "isNonBuiltInRootCertInstalled": non_builtin_result
+        "isNonBuiltInRootCertInstalled": non_builtin_certs.length > 0
       });
 
       return true;
