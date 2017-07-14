@@ -21,7 +21,6 @@ let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
 
 let readwrite_prefs = new Preferences({defaultBranch: true});
 
@@ -34,21 +33,17 @@ let configurations = [
 
 let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
+// generate random UUID for identifying probes uniquely
+function generateProbeId() {
+  let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
+  let uuid = uuidGenerator.generateUUID();
+  return uuid.toString();
+}
+
+let PROBE_ID = generateProbeId();
+
 let windowMediator = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
 let domWindow = windowMediator.getMostRecentWindow("navigator:browser");
-
-function debug(msg) {
-  console.log(msg); // eslint-disable-line no-console
-}
-
-// some fields are not available sometimes, so we have to catch the errors and return undefined.
-function getFieldValue(obj, name) {
-  try {
-    return obj[name];
-  } catch (ex) {
-    return undefined;
-  }
-}
 
 function prettyPrintCert(cert) {
   let info = {};
@@ -84,6 +79,19 @@ function prettyPrintCert(cert) {
   return JSON.stringify(info, null, "  ");
 }
 
+function debug(msg) {
+  console.log(msg); // eslint-disable-line no-console
+}
+
+// some fields are not available sometimes, so we have to catch the errors and return undefined.
+function getFieldValue(obj, name) {
+  try {
+    return obj[name];
+  } catch (ex) {
+    return undefined;
+  }
+}
+
 // enumerate nsIX509CertList data structure and put elements in the array
 function nsIX509CertListToArray(list) {
   let array = [];
@@ -93,8 +101,6 @@ function nsIX509CertListToArray(list) {
   while (iter.hasMoreElements()) {
     array.push(iter.getNext().QueryInterface(Ci.nsIX509Cert));
   }
-
-  // console.log(array[0].getRawDER({}));
 
   return array;
 }
@@ -113,7 +119,7 @@ function getCertChain(cert, usage) {
   });
 }
 
-// returns true if there is at least one non-builtin root certificate is installed
+// returns list of non-builtin root certificates installed
 async function getNonBuiltInRootCertsInstalled() {
   let certs = nsIX509CertListToArray(certDB.getCerts());
 
@@ -159,20 +165,22 @@ async function getInfo(xhr) {
 
         // in case cert verification failed, we need to extract the cert chain from failedCertChain attribute
         // otherwise, we extract cert chain using certDB.asyncVerifyCertAtTime API
-        result.chain = null;
+        chain = null;
 
         if (getFieldValue(securityInfo, "failedCertChain")) {
-          result.chain = nsIX509CertListToArray(securityInfo.failedCertChain);
+          chain = nsIX509CertListToArray(securityInfo.failedCertChain);
         } else {
-          result.chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
+          chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
+        // console.log(array[0].getRawDER({}));
+
         // extracting sha256 fingerprint for the leaf cert in the chain
-        result.serverSha256Fingerprint = getFieldValue(result.chain[0], "sha256Fingerprint");
+        result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
 
         // check the root cert to see if it is builtin certificate
-        result.isBuiltInRoot = (result.chain !== null && result.chain.length > 0) ? 
-                                getFieldValue(result.chain[result.chain.length - 1], "isBuiltInRoot") : null;
+        result.isBuiltInRoot = (chain !== null && chain.length > 0) ? 
+                                getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
 
         // record the tls version Firefox ended up negotiating
         result.protocolVersion = getFieldValue(sslStatus, "protocolVersion");
@@ -270,17 +278,19 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
-    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
+    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
       TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        maxVersion: {
-          value: readonly_prefs.get(VERSION_MAX_PREF),
-          isUserset: readonly_prefs.isSet(VERSION_MAX_PREF)
+        "id": PROBE_ID,
+        "status": "aborted",
+        "maxVersion": {
+          "value": readonly_prefs.get(VERSION_MAX_PREF),
+          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
         },
-        fallbackLimit: {
-          value: readonly_prefs.get(FALLBACK_LIMIT_PREF),
-          isUserset: readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+        "fallbackLimit": {
+          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
+          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
         },
-        isNonBuiltInRootCertInstalled: non_builtin_certs.length > 0
+        "isNonBuiltInRootCertInstalled": non_builtin_result
       });
 
       return true;
@@ -368,6 +378,18 @@ async function isPermitted(non_builtin_certs, tests_result) {
 }
 
 function startup() {
+}
+
+function shutdown() {
+}
+
+function install() {
+  // send start of the test probe
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+    "id": PROBE_ID,
+    "status": "started"
+  });
+
   // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
   if (hasUserSetPreference()) {
     return;
@@ -388,6 +410,8 @@ function startup() {
       isPermitted(non_builtin_certs, tests_result).then(is_permitted => {
         if (is_permitted) {
           TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+            "id": PROBE_ID,
+            "status": "finished",
             "defaultMaxVersion": defaultMaxVersion,
             "defaultFallbackLimit": defaultFallbackLimit,
             "isNonBuiltInRootCertInstalled": non_builtin_certs.length > 0,
@@ -405,13 +429,13 @@ function startup() {
 
     return true;
   }).catch(err => {
+    // restore the default values after the experiment is over
+    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
+    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+
     debug(err);
   });
 }
 
-function shutdown() {}
-
-function install() {
+function uninstall() {
 }
-
-function uninstall() {}
