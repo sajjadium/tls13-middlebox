@@ -4,13 +4,13 @@ dataset = Dataset.from_source('telemetry')
 
 dataset = (dataset.where(docType='OTHER')
                   .where(appName='Firefox')
-                  .where(appUpdateChannel='release')
-                  .where(submissionDate=lambda x: x >= '20170605'))
+                  .where(appUpdateChannel='beta')
+                  .where(submissionDate=lambda x: x >= '20170701'))
 
 records = dataset.records(sc)
 
-logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox")
+logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox-beta")
 
-logs.count()
+print logs.count()
 
-logs.take(1)
+print logs.take(10)
