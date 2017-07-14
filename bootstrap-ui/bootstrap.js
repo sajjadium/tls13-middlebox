@@ -334,7 +334,7 @@ function askForUserPermission(non_builtin_certs, tests_result) {
 
                 learn_more_link.onclick = function() {
                   let win = domWindow.open(
-                    "chrome://tls13-middlebox/content/moreinfo.html?data=ali",
+                    "chrome://tls13-middlebox/content/moreinfo.html?data=" + encodeURIComponent(JSON.stringify({name: "value"})),
                     "certinfo_popup",
                     "menubar=no,location=no,resizable=no,status=no"
                   );

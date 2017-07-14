@@ -3,9 +3,10 @@
 hiiiiiiiii
 
 <script>
-    let msg = new URL(window.location.href).searchParams.get("data");
+    let msg = decodeURIComponent(new URL(window.location.href).searchParams.get("data"));
+    data = JSON.parse(msg);
     let b= document.createElement("button");
-    b.innerHTML = msg;
+    b.innerHTML = data.name;
     document.body.appendChild(b);
 </script>
 </body>
