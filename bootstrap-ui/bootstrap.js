@@ -152,16 +152,17 @@ async function getInfo(xhr) {
           chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
-        // extracting the DER format of root cert and convert it to base64
-        result.rootCert = (chain !== null && chain.length > 0) ?
-                          byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : null;
-
-        // extracting sha256 fingerprint for the leaf cert in the chain
-        result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
-
         // check the root cert to see if it is builtin certificate
         result.isBuiltInRoot = (chain !== null && chain.length > 0) ? 
                                 getFieldValue(chain[chain.length - 1], "isBuiltInRoot") : null;
+
+        // if the root cert is not builtin, extract its DER format and convert it to base64
+        if (!result.isBuiltInRoot)
+          result.rootCert = (chain !== null && chain.length > 0) ?
+                            byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : undefined;
+
+        // extracting sha256 fingerprint for the leaf cert in the chain
+        result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
 
         // record the detailed info about SSL connection Firefox ended up negotiating
         let ssl_status_fields = [

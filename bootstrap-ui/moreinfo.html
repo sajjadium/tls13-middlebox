@@ -1,10 +1,17 @@
 <html>
 <body>
+The list of root certificates installed on Firefox:
 <div id="certinfo">
 </div>
 <script>
     let div = document.getElementById("certinfo");
-    div.innerHTML = decodeURIComponent(new URL(window.location.href).searchParams.get("data"));
+    let certs = JSON.parse(decodeURIComponent(new URL(window.location.href).searchParams.get("data")));
+
+    for (let cert of certs) {
+      let div2 = document.createElement("div");
+      div2.innerHTML = `CN=${cert["Common Name"]}, O=${cert["Organization"]}, OU=${cert["Organizational Unit"]}`;
+      div.appendChild(div2);
+    }
 </script>
 </body>
 </html>
