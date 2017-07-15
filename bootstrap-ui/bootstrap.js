@@ -22,14 +22,14 @@ Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let readwrite_prefs = new Preferences({defaultBranch: true});
-
 // all combination of configurations we care about.
 let configurations = [
   {maxVersion: 4, fallbackLimit: 4, website: "enabled.tls13.com"},
   {maxVersion: 4, fallbackLimit: 4, website: "disabled.tls13.com"},
   {maxVersion: 3, fallbackLimit: 3, website: "control.tls12.com"}
 ];
+
+let readwrite_prefs = new Preferences({defaultBranch: true});
 
 let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
 
@@ -182,19 +182,8 @@ async function getInfo(xhr) {
           chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
-        result.certChain = null;
-
-        if (chain !== null) {
-          result.certChain = [];
-
-          for (let cert of chain) {
-            result.certChain.push(byteArrayToBase64(cert.getRawDER({})));
-          }
-        }
-
-        console.log(chain[0]);
-
-        console.log(sslStatus);
+        result.rootCert = (chain !== null && chain.length > 0) ?
+                          byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : undefined;
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -225,8 +214,6 @@ async function getInfo(xhr) {
     debug(ex);
     result.exception = ex.message;
   }
-
-  console.log(result);
 
   return result;
 }
@@ -310,15 +297,8 @@ async function runConfigurations() {
   return result;
 }
 
-function sendToTelemetry(status, data) {
-  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
-    "id": PROBE_ID,
-    "status": status
-  }, data));
-}
-
 // show the popup notification to the user
-function askForUserPermission(non_builtin_root_cert) {
+function askForUserPermission(non_builtin_root_certs) {
   return new Promise((resolve, reject) => {
     // show the actual popup
     domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
@@ -380,9 +360,9 @@ function askForUserPermission(non_builtin_root_cert) {
 }
 
 // keep showing the popup notification until the user gives his/her permission or denies our request
-async function isPermitted(non_builtin_root_cert) {
+async function isPermitted(non_builtin_root_certs) {
   while (true) {
-    let res = await askForUserPermission(non_builtin_root_cert);
+    let res = await askForUserPermission(non_builtin_root_certs);
 
     if (res !== null) {
       return res;
@@ -395,43 +375,19 @@ function hasUserSetPreference() {
   let readonly_prefs = new Preferences();
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
-    // reports the current values as well as whether they were set by the user
-    getNonBuiltInRootCertsInstalled().then(non_builtin_root_certs => {
-      let final_output = {
-        "maxVersion": {
-          "value": readonly_prefs.get(VERSION_MAX_PREF),
-          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
-        },
-        "fallbackLimit": {
-          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
-          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
-        }
-      };
-
-      if (non_builtin_root_certs.length > 0) {
-        isPermitted(non_builtin_root_certs[0]).then(is_permitted => {
-          if (is_permitted) {
-            final_output["nonBuiltInRootCertificates"] = non_builtin_root_certs;
-          } else {
-            final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
-          }
-
-          sendToTelemetry("aborted", final_output);
-        }).catch(err => {
-          debug(err);
-          final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
-          sendToTelemetry("aborted", final_output);
-        });
-
-      return true;
-    }).catch(err => {
-      debug(err);
-    });
-
-    return true;
+    return {
+      "maxVersion": {
+        "value": readonly_prefs.get(VERSION_MAX_PREF),
+        "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
+      },
+      "fallbackLimit": {
+        "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
+        "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+      }
+    };
   }
 
-  return false;
+  return null;
 }
 
 function startup() {
@@ -447,49 +403,73 @@ function install() {
     "status": "started"
   });
 
-  // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-  if (hasUserSetPreference()) {
-    return;
-  }
+  let final_output = {};
 
-  // record the default values before the experiment starts
-  let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
-  let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
+  getNonBuiltInRootCertsInstalled().then(non_builtin_root_certs => {
+    return new Promise((resolve, reject) => {
+      final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
+      final_output["nonBuiltInRootCerts"] = [];
 
-  runConfigurations().then(tests_result => {
-    // restore the default values after the experiment is over
-    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
-    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+      for (let cert of non_builtin_root_certs) {
+        final_output["nonBuiltInRootCerts"].push(byteArrayToBase64(cert.getRawDER({})));
+      }
 
-    // report the test results to telemetry
-    getNonBuiltInRootCertsInstalled().then(non_builtin_certs => {
+      // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+      let user_set_prefs = hasUserSetPreference();
+
+      if (user_set_prefs !== null) {
+        final_output["status"] = "aborted";
+        final_output = Object.assign(final_output, user_set_prefs);
+        resolve(non_builtin_root_certs);
+      } else {
+        // record the default values before the experiment starts
+        let default_max_version = readwrite_prefs.get(VERSION_MAX_PREF);
+        let default_fallback_limit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
+
+        runConfigurations().then(tests_result => {
+          // restore the default values after the experiment is over
+          readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
+          readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
+
+          // report the test results to telemetry
+          final_output["status"] = "finished";
+          final_output["defaultMaxVersion"] = default_max_version;
+          final_output["defaultFallbackLimit"] = default_fallback_limit;
+          final_output["tests"] = tests_result;
+
+          resolve(non_builtin_root_certs);
+        }).catch(err => {
+          debug(err);
+          resolve(non_builtin_root_certs);
+        });
+      }
+    });
+  }).then(non_builtin_root_certs => {
+    return new Promise((resolve, reject) => {
       // ask for user permission
-      isPermitted(non_builtin_certs, tests_result).then(is_permitted => {
-        let final_output = {
-          "defaultMaxVersion": defaultMaxVersion,
-          "defaultFallbackLimit": defaultFallbackLimit,
-          "tests": tests_result
-        };
+      isPermitted(non_builtin_root_certs).then(is_permitted => {
+        if (!is_permitted) {
+          delete final_output.nonBuiltInRootCerts;
 
-        if (is_permitted) {
-          final_output["nonBuiltInRootCertificates"] = non_builtin_certs;
-        } else {
-          final_output["isNonBuiltInRootCertInstalled"] = non_builtin_certs.length > 0;
-
-          for (let tr of tests_result) {
-            delete tr["certChain"];
+          if (final_output.tests) {
+            for (let tr of final_output.tests) {
+              delete tr.result.rootCert;
+            }
           }
         }
+
+        resolve();
+
+        return true;
       }).catch(err => {
         debug(err);
+        resolve();
       });
-
-      return true;
-    }).catch(err => {
-      debug(err);
     });
-
-    return true;
+  }).then(() => {
+    TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
+      "id": PROBE_ID,
+    }, final_output));
   }).catch(err => {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
