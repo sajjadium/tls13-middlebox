@@ -1,13 +1,10 @@
 <html>
 <body>
-hiiiiiiiii
-
+<div id="certinfo">
+</div>
 <script>
-    let msg = decodeURIComponent(new URL(window.location.href).searchParams.get("data"));
-    data = JSON.parse(msg);
-    let b= document.createElement("button");
-    b.innerHTML = data.name;
-    document.body.appendChild(b);
+    let div = document.getElementById("certinfo");
+    div.innerHTML = decodeURIComponent(new URL(window.location.href).searchParams.get("data"));
 </script>
 </body>
 </html>

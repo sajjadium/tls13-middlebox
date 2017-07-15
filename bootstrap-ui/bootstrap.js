@@ -4,6 +4,7 @@ const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
 const POPUP_NOTIFICATION_ID = "tls13-middlebox-popup";
+const POPUP_NOTIFICATION_SIZE_FACTOR = 0.3;
 
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
@@ -22,7 +23,7 @@ Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-// all combination of configurations we care about.
+// all combination of configurations we care about
 let configurations = [
   {maxVersion: 4, fallbackLimit: 4, website: "enabled.tls13.com"},
   {maxVersion: 4, fallbackLimit: 4, website: "disabled.tls13.com"},
@@ -42,42 +43,9 @@ function generateProbeId() {
 
 let PROBE_ID = generateProbeId();
 
+// get currnet window
 let windowMediator = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
 let domWindow = windowMediator.getMostRecentWindow("navigator:browser");
-
-function prettyPrintCert(cert) {
-  let info = {};
-
-  info = {
-    CN: cert.commonName,
-    O: cert.organization,
-    OU: cert.organizationalUnit,
-  };
-
-  // info.subject = {
-  //   commonName: cert.commonName,
-  //   organization: cert.organization,
-  //   organizationalUnit: cert.organizationalUnit,
-  // };
-
-  // info.issuer = {
-  //   commonName: cert.issuerCommonName,
-  //   organization: cert.issuerOrganization,
-  //   organizationUnit: cert.issuerOrganizationUnit,
-  // };
-
-  // info.validity = {
-  //   start: cert.validity.notBeforeLocalDay,
-  //   end: cert.validity.notAfterLocalDay,
-  // };
-
-  // info.fingerprint = {
-  //   sha1: cert.sha1Fingerprint,
-  //   sha256: cert.sha256Fingerprint,
-  // };
-
-  return JSON.stringify(info, null, "  ");
-}
 
 function debug(msg) {
   console.log(msg); // eslint-disable-line no-console
@@ -136,6 +104,7 @@ async function getNonBuiltInRootCertsInstalled() {
   return non_builtin_certs;
 }
 
+// convert byte array to base64
 function byteArrayToBase64(bytes) {
   let str = "";
 
@@ -145,6 +114,7 @@ function byteArrayToBase64(bytes) {
   return domWindow.btoa(str);
 }
 
+// get extra info from the XHR connections
 async function getInfo(xhr) {
   let result = {};
 
@@ -182,8 +152,9 @@ async function getInfo(xhr) {
           chain = await getCertChain(getFieldValue(sslStatus, "serverCert"), CERT_USAGE_SSL_SERVER);
         }
 
+        // extracting the DER format of root cert and convert it to base64
         result.rootCert = (chain !== null && chain.length > 0) ?
-                          byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : undefined;
+                          byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : null;
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -211,8 +182,8 @@ async function getInfo(xhr) {
       }
     }
   } catch (ex) {
-    debug(ex);
     result.exception = ex.message;
+    debug(ex);
   }
 
   return result;
@@ -297,13 +268,13 @@ async function runConfigurations() {
   return result;
 }
 
-// show the popup notification to the user
+// shows the popup notification to the user in which it puts the non-builtin cert info
 function askForUserPermission(non_builtin_root_certs) {
   return new Promise((resolve, reject) => {
     // show the actual popup
     domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
       POPUP_NOTIFICATION_ID,
-      "You have a MITM box in your network.",
+      "We have detected a Middlebox in your network. Help Mozilla by reporting it.",
       null,
       {
         label: "Report to Mozilla",
@@ -329,6 +300,8 @@ function askForUserPermission(non_builtin_root_certs) {
               let notification = domWindow.document.getElementById(POPUP_NOTIFICATION_ID + "-notification");
 
               if (!notification.querySelector("popupnotificationcontent")) {
+                // add the learn more link
+                // if the user clicks on it, it shows the cert info
                 let notificationcontent = domWindow.document.createElement("popupnotificationcontent");
                 let learn_more_link = domWindow.document.createElement("label");
                 learn_more_link.className = "text-link";
@@ -336,10 +309,28 @@ function askForUserPermission(non_builtin_root_certs) {
                 learn_more_link.setAttribute("value", "Learn more ...");
 
                 learn_more_link.onclick = function() {
+                  // extract extra info for user
+                  let info = [];
+
+                  for (let cert of non_builtin_root_certs) {
+                    info.push({
+                      "Common Name": cert.commonName,
+                      "Organization": cert.organization,
+                      "Organizational Unit": cert.organizationalUnit,
+                    });
+                  }
+
+                  // show the popup window and pass the cert info to it
+                  let width = domWindow.screen.width * POPUP_NOTIFICATION_SIZE_FACTOR;
+                  let height = domWindow.screen.height * POPUP_NOTIFICATION_SIZE_FACTOR;
+                  var left = (domWindow.screen.width / 2) - (width / 2);
+                  var top = (domWindow.screen.height / 2) - (height / 2);
+
                   let win = domWindow.open(
-                    "chrome://tls13-middlebox/content/moreinfo.html?data=" + encodeURIComponent(JSON.stringify({name: "value"})),
+                    "chrome://tls13-middlebox/content/moreinfo.html?data=" + encodeURIComponent(JSON.stringify(info)),
                     "certinfo_popup",
-                    "menubar=no,location=no,resizable=no,status=no"
+                    `toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no,
+                    width=${width},height=${height},top=${top},left=${left}`
                   );
                 }
 
@@ -405,19 +396,16 @@ function install() {
 
   let final_output = {};
 
+  // get all of the non-builtin root certs
   getNonBuiltInRootCertsInstalled().then(non_builtin_root_certs => {
     return new Promise((resolve, reject) => {
       final_output["isNonBuiltInRootCertInstalled"] = non_builtin_root_certs.length > 0;
-      final_output["nonBuiltInRootCerts"] = [];
-
-      for (let cert of non_builtin_root_certs) {
-        final_output["nonBuiltInRootCerts"].push(byteArrayToBase64(cert.getRawDER({})));
-      }
 
       // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
       let user_set_prefs = hasUserSetPreference();
 
       if (user_set_prefs !== null) {
+        // abort the XHR requests
         final_output["status"] = "aborted";
         final_output = Object.assign(final_output, user_set_prefs);
         resolve(non_builtin_root_certs);
@@ -431,50 +419,69 @@ function install() {
           readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
           readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
 
-          // report the test results to telemetry
+          // add the result into the final output
           final_output["status"] = "finished";
           final_output["defaultMaxVersion"] = default_max_version;
           final_output["defaultFallbackLimit"] = default_fallback_limit;
           final_output["tests"] = tests_result;
 
+          // if there is no non-builtin root certs installed, no need to keep the root cert for the connection
+          if (non_builtin_root_certs.length === 0) {
+            for (let tr of tests_result) {
+              delete tr.result.rootCert;
+            }
+          }
+
           resolve(non_builtin_root_certs);
         }).catch(err => {
+          // restore the default values after the experiment is over
+          readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
+          readwrite_prefs.set(FALLBACK_LIMIT_PREF, default_fallback_limit);
+
           debug(err);
-          resolve(non_builtin_root_certs);
+          reject(err);
         });
       }
     });
   }).then(non_builtin_root_certs => {
     return new Promise((resolve, reject) => {
       // ask for user permission
-      isPermitted(non_builtin_root_certs).then(is_permitted => {
-        if (!is_permitted) {
-          delete final_output.nonBuiltInRootCerts;
+      if (non_builtin_root_certs.length > 0) {
+        isPermitted(non_builtin_root_certs).then(is_permitted => {
+          if (is_permitted) {
+            // extract DER format of non-builtin root certs
+            final_output["nonBuiltInRootCerts"] = [];
 
-          if (final_output.tests) {
-            for (let tr of final_output.tests) {
-              delete tr.result.rootCert;
+            for (let cert of non_builtin_root_certs) {
+              final_output["nonBuiltInRootCerts"].push(byteArrayToBase64(cert.getRawDER({})));
+            }
+          } else {
+            // remove the root cert from test results
+            if (final_output.tests) {
+              for (let tr of final_output.tests) {
+                delete tr.result.rootCert;
+              }
             }
           }
-        }
 
-        resolve();
+          resolve();
 
-        return true;
-      }).catch(err => {
-        debug(err);
-        resolve();
-      });
+          return true;
+        }).catch(err => {
+          debug(err);
+          reject(err);
+        });
+      } else {
+        resolve(non_builtin_root_certs);
+      }
     });
   }).then(() => {
     TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
       "id": PROBE_ID,
     }, final_output));
-  }).catch(err => {
-    // restore the default values after the experiment is over
-    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
-    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
+    return true;
+  }).catch(err => {
     debug(err);
   });
 }
