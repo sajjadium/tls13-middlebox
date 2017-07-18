@@ -4,7 +4,6 @@ const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
 const POPUP_NOTIFICATION_ID = "tls13-middlebox-popup";
-const POPUP_NOTIFICATION_SIZE_FACTOR = 0.3;
 
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
@@ -268,6 +267,32 @@ async function runConfigurations() {
   return result;
 }
 
+// pretty print the cert
+function dumpCertText(cert) {
+  let asn1Tree = Cc["@mozilla.org/security/nsASN1Tree;1"].createInstance(Ci.nsIASN1Tree);
+  asn1Tree.loadASN1Structure(cert.ASN1Structure);
+
+  let cert_text = `Certificate "${asn1Tree.getCellText(0, null).trim()}"\n`;
+
+  for (let i = 1; i < asn1Tree.rowCount; i++) {
+    cert_text += "\t".repeat(asn1Tree.getLevel(i) - 1);
+
+    cert_text += `${asn1Tree.getCellText(i, null).trim()}:\n`;
+
+    if (asn1Tree.getDisplayData(i).trim() !== "") {
+      cert_text += "\t".repeat(asn1Tree.getLevel(i));
+      cert_text += asn1Tree.getDisplayData(i).trim().replace(/\n(?=.+)/g, "\n" + "\t".repeat(asn1Tree.getLevel(i))) + "\n";
+    }
+  }
+
+  // extract PEM format
+  var pem = "-----BEGIN CERTIFICATE-----\n" +
+            byteArrayToBase64(cert.getRawDER({})).replace(/(\S{64}(?!$))/g, "$1\n") +
+            "\n-----END CERTIFICATE-----\n";
+
+  return cert_text + pem;
+}
+
 // shows the popup notification to the user in which it puts the non-builtin cert info
 function askForUserPermission(middlebox_root_cert) {
   return new Promise((resolve, reject) => {
@@ -303,42 +328,21 @@ function askForUserPermission(middlebox_root_cert) {
                 // add the learn more link
                 // if the user clicks on it, it shows the cert info
                 let notificationcontent = domWindow.document.createElement("popupnotificationcontent");
-                let learn_more_link = domWindow.document.createElement("label");
-                learn_more_link.className = "text-link";
-                learn_more_link.setAttribute("useoriginprincipal", true);
-                learn_more_link.setAttribute("value", "Learn more ...");
+                let view_cert_link = domWindow.document.createElement("label");
+                view_cert_link.className = "text-link";
+                view_cert_link.setAttribute("useoriginprincipal", true);
+                view_cert_link.setAttribute("value", "View Certificate ...");
 
-                learn_more_link.onclick = function() {
-                  let asn1Tree = Cc["@mozilla.org/security/nsASN1Tree;1"].createInstance(Ci.nsIASN1Tree);
-                  asn1Tree.loadASN1Structure(middlebox_root_cert.ASN1Structure);
-
-                  for (let i = 0; i < asn1Tree.rowCount; i++) {
-                    let cert_text = asn1Tree.getCellText(i, null) + "\t" + asn1Tree.getDisplayData(i);
-                    console.log(cert_text);
-                  }
-
-                  // extract extra info for user
-                  let info = {
-                      "Common Name": middlebox_root_cert.commonName,
-                      "Organization": middlebox_root_cert.organization,
-                      "Organizational Unit": middlebox_root_cert.organizationalUnit,
-                  };
-
-                  // show the popup window and pass the cert info to it
-                  let width = domWindow.screen.width * POPUP_NOTIFICATION_SIZE_FACTOR;
-                  let height = domWindow.screen.height * POPUP_NOTIFICATION_SIZE_FACTOR;
-                  var left = (domWindow.screen.width / 2) - (width / 2);
-                  var top = (domWindow.screen.height / 2) - (height / 2);
-
-                  let win = domWindow.open(
-                    "chrome://tls13-middlebox/content/certinfo.html?data=" + encodeURIComponent(JSON.stringify(info)),
-                    "certinfo_popup",
-                    `toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no,
-                    width=${width},height=${height},top=${top},left=${left}`
-                  );
+                view_cert_link.onclick = function() {
+                  // open a popup showing the pretty print of the cert
+                  let supportsString = Cc["@mozilla.org/supports-string;1"].createInstance(Ci.nsISupportsString);
+                  supportsString.data = "data:;charset=utf-8," + encodeURIComponent(dumpCertText(middlebox_root_cert));
+                  let windowWatcher = Cc["@mozilla.org/embedcomp/window-watcher;1"].getService(Ci.nsIWindowWatcher);
+                  windowWatcher.openWindow(null, "chrome://global/content/viewSource.xul", "_blank",
+                                          "scrollbars,resizable,chrome,dialog=no", supportsString);
                 }
 
-                notificationcontent.appendChild(learn_more_link);
+                notificationcontent.appendChild(view_cert_link);
                 notification.append(notificationcontent);
               }
             } else if (reason === "removed") {
