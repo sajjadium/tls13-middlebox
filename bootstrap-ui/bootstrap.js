@@ -163,21 +163,10 @@ async function getInfo(xhr) {
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
 
         // record the detailed info about SSL connection Firefox ended up negotiating
-        let ssl_status_fields = [
-          "certificateTransparencyStatus",
-          "cipherName",
-          "isDomainMismatch",
-          "isExtendedValidation",
-          "isNotValidAtThisTime",
-          "isUntrusted",
-          "keyLength",
-          "protocolVersion",
-          "secretKeyLength"
-        ];
-
-        for (let field of ssl_status_fields) {
-          result[field] = getFieldValue(sslStatus, field);
-        }
+        result["cipherName"] = getFieldValue(sslStatus, "cipherName");
+        result["protocolVersion"] = getFieldValue(sslStatus, "protocolVersion");
+        result["keyLength"] = getFieldValue(sslStatus, "keyLength");
+        result["secretKeyLength"] = getFieldValue(sslStatus, "secretKeyLength");
       }
     }
   } catch (ex) {
@@ -441,7 +430,9 @@ function install() {
           let middlebox_root_cert = null;
 
           for (let tr of final_output.tests) {
-            if (tr.website.toLowerCase() === "enabled.tls13.com" && tr.result.rootCert) {
+            if (tr.website.toLowerCase() === "enabled.tls13.com" &&
+                tr.result.rootCert &&
+                tr.result.event.toLowerCase() === "error") {
               middlebox_root_cert = tr.result.rootCert;
             }
 
