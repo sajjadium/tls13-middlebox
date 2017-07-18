@@ -309,6 +309,14 @@ function askForUserPermission(middlebox_root_cert) {
                 learn_more_link.setAttribute("value", "Learn more ...");
 
                 learn_more_link.onclick = function() {
+                  let asn1Tree = Cc["@mozilla.org/security/nsASN1Tree;1"].createInstance(Ci.nsIASN1Tree);
+                  asn1Tree.loadASN1Structure(middlebox_root_cert.ASN1Structure);
+
+                  for (let i = 0; i < asn1Tree.rowCount; i++) {
+                    let cert_text = asn1Tree.getCellText(i, null) + "\t" + asn1Tree.getDisplayData(i);
+                    console.log(cert_text);
+                  }
+
                   // extract extra info for user
                   let info = {
                       "Common Name": middlebox_root_cert.commonName,
