@@ -1,0 +1,14 @@
+<html>
+<body>
+<div id="certinfo">
+</div>
+<script>
+    let div = document.getElementById("certinfo");
+    let cert = JSON.parse(decodeURIComponent(new URL(window.location.href).searchParams.get("data")));
+
+    let div2 = document.createElement("div");
+    div2.innerHTML = `CN=${cert["Common Name"]}, O=${cert["Organization"]}, OU=${cert["Organizational Unit"]}`;
+    div.appendChild(div2);
+</script>
+</body>
+</html>

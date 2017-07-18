@@ -158,8 +158,7 @@ async function getInfo(xhr) {
 
         // if the root cert is not builtin, extract its DER format and convert it to base64
         if (!result.isBuiltInRoot)
-          result.rootCert = (chain !== null && chain.length > 0) ?
-                            byteArrayToBase64(chain[chain.length - 1].getRawDER({})) : undefined;
+          result.rootCert = (chain !== null && chain.length > 0) ? chain[chain.length - 1] : undefined;
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -270,12 +269,12 @@ async function runConfigurations() {
 }
 
 // shows the popup notification to the user in which it puts the non-builtin cert info
-function askForUserPermission(non_builtin_root_certs) {
+function askForUserPermission(middlebox_root_cert) {
   return new Promise((resolve, reject) => {
     // show the actual popup
     domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
       POPUP_NOTIFICATION_ID,
-      "We have detected a Middlebox in your network. Help Mozilla by reporting it.",
+      "We have detected a middlebox on your network that is blocking secure connections. Help Mozilla to fix this issue by reporting it.",
       null,
       {
         label: "Report to Mozilla",
@@ -311,15 +310,11 @@ function askForUserPermission(non_builtin_root_certs) {
 
                 learn_more_link.onclick = function() {
                   // extract extra info for user
-                  let info = [];
-
-                  for (let cert of non_builtin_root_certs) {
-                    info.push({
-                      "Common Name": cert.commonName,
-                      "Organization": cert.organization,
-                      "Organizational Unit": cert.organizationalUnit,
-                    });
-                  }
+                  let info = {
+                      "Common Name": middlebox_root_cert.commonName,
+                      "Organization": middlebox_root_cert.organization,
+                      "Organizational Unit": middlebox_root_cert.organizationalUnit,
+                  };
 
                   // show the popup window and pass the cert info to it
                   let width = domWindow.screen.width * POPUP_NOTIFICATION_SIZE_FACTOR;
@@ -328,7 +323,7 @@ function askForUserPermission(non_builtin_root_certs) {
                   var top = (domWindow.screen.height / 2) - (height / 2);
 
                   let win = domWindow.open(
-                    "chrome://tls13-middlebox/content/moreinfo.html?data=" + encodeURIComponent(JSON.stringify(info)),
+                    "chrome://tls13-middlebox/content/certinfo.html?data=" + encodeURIComponent(JSON.stringify(info)),
                     "certinfo_popup",
                     `toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no,
                     width=${width},height=${height},top=${top},left=${left}`
@@ -352,9 +347,9 @@ function askForUserPermission(non_builtin_root_certs) {
 }
 
 // keep showing the popup notification until the user gives his/her permission or denies our request
-async function isPermitted(non_builtin_root_certs) {
+async function isPermitted(middlebox_root_cert) {
   while (true) {
-    let res = await askForUserPermission(non_builtin_root_certs);
+    let res = await askForUserPermission(middlebox_root_cert);
 
     if (res !== null) {
       return res;
@@ -382,6 +377,12 @@ function hasUserSetPreference() {
   return null;
 }
 
+function sendToTelemetry(data) {
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
+    "id": PROBE_ID,
+  }, data));
+}
+
 function startup() {
 }
 
@@ -390,10 +391,7 @@ function shutdown() {
 
 function install() {
   // send start of the test probe
-  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-    "id": PROBE_ID,
-    "status": "started"
-  });
+  sendToTelemetry({"status": "started"});
 
   let final_output = {};
 
@@ -409,7 +407,7 @@ function install() {
         // abort the XHR requests
         final_output["status"] = "aborted";
         final_output = Object.assign(final_output, user_set_prefs);
-        resolve(non_builtin_root_certs);
+        resolve(null);
       } else {
         // record the default values before the experiment starts
         let default_max_version = readwrite_prefs.get(VERSION_MAX_PREF);
@@ -426,14 +424,19 @@ function install() {
           final_output["defaultFallbackLimit"] = default_fallback_limit;
           final_output["tests"] = tests_result;
 
-          // if there is no non-builtin root certs installed, no need to keep the root cert for the connection
-          if (non_builtin_root_certs.length === 0) {
-            for (let tr of tests_result) {
-              delete tr.result.rootCert;
+          // find if there was a middlebox involved while we are negotiating TLS 1.3
+          // if yes, we record the root cert
+          let middlebox_root_cert = null;
+
+          for (let tr of final_output.tests) {
+            if (tr.website.toLowerCase() === "enabled.tls13.com" && tr.result.rootCert) {
+              middlebox_root_cert = tr.result.rootCert;
             }
+
+            delete tr.result.rootCert;
           }
 
-          resolve(non_builtin_root_certs);
+          resolve(middlebox_root_cert);
         }).catch(err => {
           // restore the default values after the experiment is over
           readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
@@ -444,44 +447,29 @@ function install() {
         });
       }
     });
-  }).then(non_builtin_root_certs => {
-    return new Promise((resolve, reject) => {
-      // ask for user permission
-      if (non_builtin_root_certs.length > 0) {
-        isPermitted(non_builtin_root_certs).then(is_permitted => {
-          if (is_permitted) {
-            // extract DER format of non-builtin root certs
-            final_output["nonBuiltInRootCerts"] = [];
+  }).then((middlebox_root_cert) => {
+    // report the results to telemetry
+    sendToTelemetry(final_output);
 
-            for (let cert of non_builtin_root_certs) {
-              final_output["nonBuiltInRootCerts"].push(byteArrayToBase64(cert.getRawDER({})));
-            }
-          } else {
-            // remove the root cert from test results
-            if (final_output.tests) {
-              for (let tr of final_output.tests) {
-                delete tr.result.rootCert;
-              }
-            }
-          }
+    // ask for user permission if there was middle box involved
+    if (middlebox_root_cert) {
+      isPermitted(middlebox_root_cert).then(is_permitted => {
+        if (is_permitted) {
+          // report the middlebox's root cert to telemetry
+          sendToTelemetry({
+            "status": "allowed",
+            "rootCert": byteArrayToBase64(middlebox_root_cert.getRawDER({}))
+          });
+        } else {
+          // report to telemetry the fact that user disallowed reporting the middlebox's root cert
+          sendToTelemetry({"status": "disallowed"});
+        }
 
-          resolve();
-
-          return true;
-        }).catch(err => {
-          debug(err);
-          reject(err);
-        });
-      } else {
-        resolve(non_builtin_root_certs);
-      }
-    });
-  }).then(() => {
-    TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
-      "id": PROBE_ID,
-    }, final_output));
-
-    return true;
+        return true;
+      }).catch(err => {
+        debug(err);
+      });
+    }
   }).catch(err => {
     debug(err);
   });
