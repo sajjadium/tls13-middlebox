@@ -2,6 +2,7 @@
 
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
+const KEEP_ALIVE_TIMEOUT_PREF = "network.http.keep-alive.timeout";
 
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
@@ -10,23 +11,27 @@ const CERT_USAGE_EMAIL_SIGNER    = 0x0010;
 const CERT_USAGE_EMAIL_RECIPIENT = 0x0020;
 const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
 
+const REPEAT_COUNT = 5;
+
 const XHR_TIMEOUT = 10000;
 
-const TELEMETRY_PING_NAME = "tls13-middlebox-beta";
+const TELEMETRY_PING_NAME = "tls13-middlebox-testing";
 
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://gre/modules/TelemetryController.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Timer.jsm");
 
 let readwrite_prefs = new Preferences({defaultBranch: true});
 
 // all combination of configurations we care about.
 let configurations = [
-  {maxVersion: 4, fallbackLimit: 4, website: "enabled.tls13.com"},
-  {maxVersion: 4, fallbackLimit: 4, website: "disabled.tls13.com"},
-  {maxVersion: 3, fallbackLimit: 3, website: "control.tls12.com"}
+  {maxVersion: 4, fallbackLimit: 4, website: "https://enabled.tls13.com"},
+  {maxVersion: 4, fallbackLimit: 4, website: "https://disabled.tls13.com"},
+  {maxVersion: 3, fallbackLimit: 3, website: "https://control.tls12.com"},
+  {maxVersion: 3, fallbackLimit: 3, website: "http://tls12.com"}
 ];
 
 let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
@@ -149,13 +154,19 @@ async function getInfo(xhr) {
   return result;
 }
 
+function sleep(seconds) {
+  return new Promise((resolve, reject) => {
+    setTimeout(function() {
+      resolve();
+    }, seconds * 1000);
+  });
+}
+
 function makeRequest(config) {
   return new Promise((resolve, reject) => {
     // put together the configuration and the info collected from the connection
     async function reportResult(event, xhr) {
-      let output = Object.assign({"result": {"event": event, "responseCode": xhr.status}}, config);
-      output.result = Object.assign(output.result, await getInfo(xhr));
-      resolve(output);
+      resolve(Object.assign({"event": event, "responseCode": xhr.status}, await getInfo(xhr)));
       return true;
     }
 
@@ -164,15 +175,22 @@ function makeRequest(config) {
       readwrite_prefs.set(VERSION_MAX_PREF, config.maxVersion);
       readwrite_prefs.set(FALLBACK_LIMIT_PREF, config.fallbackLimit);
 
+      // set the timeout to 1
+      readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, 1);
+
       let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-      xhr.open("GET", `https://${config.website}`, true);
+      xhr.open("GET", config.website, true);
 
       xhr.timeout = XHR_TIMEOUT;
 
+      xhr.channel.loadFlags = 0;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_ANONYMOUS;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
       xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
+      xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_PIPELINE;
+      xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_PERSISTENT_CACHING;
+      xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
@@ -217,15 +235,25 @@ function shuffleArray(original_array) {
 
 // make the request for each configuration
 async function runConfigurations() {
-  let result = [];
+  let results = [];
 
-  for (let config of shuffleArray(configurations)) {
-    // we wait until the result is ready for the current configuration
-    // and then move on to the next configuration
-    result.push(await makeRequest(config));
+  let configs = shuffleArray(configurations);
+
+  for (let c = 0; c < configs.length; c++) {
+    results.push(Object.assign(configs[c], {"results": []}));
   }
 
-  return result;
+  for (let i = 0; i < REPEAT_COUNT; i++) {
+    for (let c = 0; c < configs.length; c++) {
+      // we wait until the result is ready for the current configuration
+      // and then move on to the next configuration
+      results[c].results.push(await makeRequest(configs[c]));
+    }
+
+    await sleep(3);
+  }
+
+  return results;
 }
 
 // check if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
@@ -281,11 +309,13 @@ function install() {
   // record the default values before the experiment starts
   let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
   let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
+  let defaultKeepAliveTimeout = readwrite_prefs.get(KEEP_ALIVE_TIMEOUT_PREF);
 
   runConfigurations().then(tests_result => {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+    readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, defaultKeepAliveTimeout);
 
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
@@ -308,6 +338,7 @@ function install() {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+    readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, defaultKeepAliveTimeout);
 
     debug(err);
   });
