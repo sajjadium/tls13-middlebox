@@ -2,7 +2,6 @@
 
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
-const KEEP_ALIVE_TIMEOUT_PREF = "network.http.keep-alive.timeout";
 
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
@@ -154,14 +153,6 @@ async function getInfo(xhr) {
   return result;
 }
 
-function sleep(seconds) {
-  return new Promise((resolve, reject) => {
-    setTimeout(function() {
-      resolve();
-    }, seconds * 1000);
-  });
-}
-
 function makeRequest(config) {
   return new Promise((resolve, reject) => {
     // put together the configuration and the info collected from the connection
@@ -174,9 +165,6 @@ function makeRequest(config) {
       // set the configuration to the values that were passed to this function
       readwrite_prefs.set(VERSION_MAX_PREF, config.maxVersion);
       readwrite_prefs.set(FALLBACK_LIMIT_PREF, config.fallbackLimit);
-
-      // set the timeout to 1
-      readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, 1);
 
       let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
@@ -191,6 +179,7 @@ function makeRequest(config) {
       xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_PIPELINE;
       xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_PERSISTENT_CACHING;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
+      xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_INITIAL_DOCUMENT_URI;
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
@@ -249,8 +238,6 @@ async function runConfigurations() {
       // and then move on to the next configuration
       results[c].results.push(await makeRequest(configs[c]));
     }
-
-    await sleep(3);
   }
 
   return results;
@@ -309,13 +296,11 @@ function install() {
   // record the default values before the experiment starts
   let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
   let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
-  let defaultKeepAliveTimeout = readwrite_prefs.get(KEEP_ALIVE_TIMEOUT_PREF);
 
   runConfigurations().then(tests_result => {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
-    readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, defaultKeepAliveTimeout);
 
     // report the test results to telemetry
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
@@ -338,7 +323,6 @@ function install() {
     // restore the default values after the experiment is over
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
-    readwrite_prefs.set(KEEP_ALIVE_TIMEOUT_PREF, defaultKeepAliveTimeout);
 
     debug(err);
   });
