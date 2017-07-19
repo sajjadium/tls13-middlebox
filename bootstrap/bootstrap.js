@@ -14,7 +14,7 @@ const REPEAT_COUNT = 5;
 
 const XHR_TIMEOUT = 10000;
 
-const TELEMETRY_PING_NAME = "tls13-middlebox-testing";
+const TELEMETRY_PING_NAME = "tls13-middlebox-beta-repetition";
 
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
