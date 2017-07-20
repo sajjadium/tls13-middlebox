@@ -10,3 +10,6 @@
 ./security/nss/lib/ssl/sslerr.h
 ./security/nss/lib/ssl/SSLerrs.h
 
+./nsprpub/pr/include/prerr.h
+./obj-x86_64-apple-darwin16.6.0/dist/include/nspr/prerr.h
+
