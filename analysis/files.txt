@@ -1,0 +1,12 @@
+./obj-x86_64-apple-darwin16.6.0/xpcom/base/ErrorList.h
+./xpcom/base/ErrorList.py
+
+./obj-x86_64-apple-darwin16.6.0/dist/include/nss/secerr.h
+./security/nss/lib/util/secerr.h
+./security/nss/lib/util/SECerrs.h
+./security/pkix/include/pkix/Result.h
+
+./obj-x86_64-apple-darwin16.6.0/dist/include/nss/sslerr.h
+./security/nss/lib/ssl/sslerr.h
+./security/nss/lib/ssl/SSLerrs.h
+
