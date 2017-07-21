@@ -69,7 +69,7 @@ print "status: ", [intToHex(x) for x in status]
 print "errorCode: ", [intToHex(x) for x in errorCodes]
 
 
-# In[44]:
+# In[45]:
 
 
 def intToHex(num):
@@ -77,9 +77,9 @@ def intToHex(num):
 
 def getErrorString(ec):
     if ec in error_names:
-        return error_names[ec]
+        return ','.join(error_names[ec])
         
-    return []
+    return None
 
 error_names = {}
 
