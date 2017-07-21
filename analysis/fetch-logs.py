@@ -34,30 +34,10 @@ with open('beta-logs.json', 'w') as f:
 
 
 
-# In[39]:
+# In[42]:
 
 import sys
 import traceback
-
-def intToHex(num):
-    return hex(num) if num is not None else None
-
-def getErrorString(ec):
-    if ec in error_names:
-        error_names[ec]
-        
-    return []
-
-error_names = {}
-
-with open("codes.txt", "r") as f:
-    for line in f:
-        tokens = line.strip().split()
-        
-        if int(tokens[0]) not in error_names:
-            error_names[int(tokens[0])] = []
-            
-        error_names[int(tokens[0])].append(tokens[1])
 
 security_states = set()
 status = set()
@@ -87,6 +67,30 @@ except:
 print "securityState: ", [intToHex(x) for x in security_states]
 print "status: ", [intToHex(x) for x in status]
 print "errorCode: ", [intToHex(x) for x in errorCodes]
+
+
+# In[44]:
+
+
+def intToHex(num):
+    return hex(num) if num is not None else None
+
+def getErrorString(ec):
+    if ec in error_names:
+        return error_names[ec]
+        
+    return []
+
+error_names = {}
+
+with open("codes.txt", "r") as f:
+    for line in f:
+        tokens = line.strip().split()
+        
+        if int(tokens[0], 16) not in error_names:
+            error_names[int(tokens[0], 16)] = []
+            
+        error_names[int(tokens[0], 16)].append(tokens[1])
 
 print "status errorCode pair: "
 
