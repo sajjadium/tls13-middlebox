@@ -39,7 +39,7 @@ nightly_logs = logs.take(10000000)
 
 
 
-# In[11]:
+# In[28]:
 
 import sys
 import traceback
@@ -49,7 +49,7 @@ def intToHex(num):
 
 def getErrorString(status, error_code):
     if status in [0, None] and error_code in [0, None]:
-        return None
+        return "N/A"
     
     msg = []
     
@@ -61,7 +61,16 @@ def getErrorString(status, error_code):
             if m not in msg:
                 msg.append(m)
 
-    return msg
+    return json.dumps(msg)
+
+def getRootCA(result):
+    if "isBuiltInRoot" not in result:
+        return "N/A"
+    
+    if result["isBuiltInRoot"]:
+        return "Built-In"
+    else:
+        return "Middlebox"
 
 error_messages = {}
 
@@ -74,7 +83,9 @@ with open("codes.txt", "r") as f:
 
         error_messages[int(tokens[0], 16)].append(tokens[1])
 
-with open("logs-beta.flat", "w") as outf:    
+with open("logs-beta.flat", "w") as outf:
+#     print >> outf, "Client\tNon-BuiltIn Root Cert Installed\tWebsite\tChain Root Cert\tError Codes"
+    
     with open("logs-beta.json", "r") as f:
         for line in f:
             data = json.loads(line.strip())
@@ -82,14 +93,15 @@ with open("logs-beta.flat", "w") as outf:
             if data["payload"]["status"] != "finished":
                 continue
 
-            for test in data["payload"]["tests"]:
+            for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
                 if test["result"]["event"] in ["load", "loadend"]:
                     continue
 
                 status = test["result"]["status"] if "status" in test["result"] else None
                 error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
 
-                print >> outf, "%s\t%s\t%s\t%s\t%s" %                       (data["id"], test["website"], test["result"]["event"],                        json.dumps(test["result"]["isBuiltInRoot"] if "isBuiltInRoot" in test["result"] else None),                        json.dumps(getErrorString(status, error_code)))
+                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s" %                       (data["id"],                        "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No",                        test["website"], test["result"]["event"],                        getRootCA(test["result"]),
+                       getErrorString(status, error_code))
 
 
 # In[6]:
