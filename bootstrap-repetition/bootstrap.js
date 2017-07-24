@@ -315,7 +315,11 @@ function install() {
 
       return true;
     }).catch(err => {
-      debug(err);
+      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+        "id": PROBE_ID,
+        "status": "canceled",
+        "exception": err.toSource()
+      });
     });
 
     return true;
@@ -324,7 +328,11 @@ function install() {
     readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
     readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
-    debug(err);
+    TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
+      "id": PROBE_ID,
+      "status": "canceled",
+      "exception": err.toSource()
+    });
   });
 }
 
