@@ -268,12 +268,12 @@ function hasUserSetPreference() {
     };
 
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      final_output["isNonBuiltInRootCertInstalled"] = non_builtin_result;
+      final_output.isNonBuiltInRootCertInstalled = non_builtin_result;
       sendToTelemetry("aborted", final_output);
 
       return true;
     }).catch(err => {
-      final_output["exception"] = err.toSource();
+      final_output.exception = err.toSource();
       sendToTelemetry("aborted", final_output);
     });
 
@@ -316,12 +316,12 @@ function install() {
 
       // report the test results to telemetry
       isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-        final_output["isNonBuiltInRootCertInstalled"] = non_builtin_result;
+        final_output.isNonBuiltInRootCertInstalled = non_builtin_result;
         sendToTelemetry("finished", final_output);
 
         return true;
       }).catch(err => {
-        final_output["exception"] = err.toSource();
+        final_output.exception = err.toSource();
         sendToTelemetry("finished", final_output);
       });
 
