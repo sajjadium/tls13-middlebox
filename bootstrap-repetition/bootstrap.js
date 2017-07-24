@@ -249,24 +249,25 @@ function hasUserSetPreference() {
 
   if (readonly_prefs.isSet(VERSION_MAX_PREF) || readonly_prefs.isSet(FALLBACK_LIMIT_PREF)) {
     // reports the current values as well as whether they were set by the user
+    let final_output = {
+      "maxVersion": {
+        "value": readonly_prefs.get(VERSION_MAX_PREF),
+        "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
+      },
+      "fallbackLimit": {
+        "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
+        "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
+      }
+    };
+
     isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        "id": PROBE_ID,
-        "status": "aborted",
-        "maxVersion": {
-          "value": readonly_prefs.get(VERSION_MAX_PREF),
-          "isUserset": readonly_prefs.isSet(VERSION_MAX_PREF)
-        },
-        "fallbackLimit": {
-          "value": readonly_prefs.get(FALLBACK_LIMIT_PREF),
-          "isUserset": readonly_prefs.isSet(FALLBACK_LIMIT_PREF)
-        },
-        "isNonBuiltInRootCertInstalled": non_builtin_result
-      });
+      final_output["isNonBuiltInRootCertInstalled"] = non_builtin_result;
+      sendToTelemetry("aborted", final_output);
 
       return true;
     }).catch(err => {
-      debug(err);
+      final_output["exception"] = err.toSource();
+      sendToTelemetry("aborted", final_output);
     });
 
     return true;
@@ -281,59 +282,62 @@ function startup() {
 function shutdown() {
 }
 
+function sendToTelemetry(status, data) {
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
+    "id": PROBE_ID,
+    "status": status
+  }, data));
+}
+
 function install() {
   // send start of the test probe
-  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-    "id": PROBE_ID,
-    "status": "started"
-  });
+  try {
+    sendToTelemetry("started", {});
 
-  // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-  if (hasUserSetPreference()) {
-    return;
-  }
+    let k = f;
 
-  // record the default values before the experiment starts
-  let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
-  let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
+    // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
+    if (hasUserSetPreference()) {
+      return;
+    }
 
-  runConfigurations().then(tests_result => {
-    // restore the default values after the experiment is over
-    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
-    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+    // record the default values before the experiment starts
+    let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
+    let defaultFallbackLimit = readwrite_prefs.get(FALLBACK_LIMIT_PREF);
 
-    // report the test results to telemetry
-    isNonBuiltInRootCertInstalled().then(non_builtin_result => {
-      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        "id": PROBE_ID,
-        "status": "finished",
+    runConfigurations().then(tests_result => {
+      // restore the default values after the experiment is over
+      readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
+      readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
+
+      let final_output = {
         "defaultMaxVersion": defaultMaxVersion,
         "defaultFallbackLimit": defaultFallbackLimit,
-        "isNonBuiltInRootCertInstalled": non_builtin_result,
         "tests": tests_result
+      };
+
+      // report the test results to telemetry
+      isNonBuiltInRootCertInstalled().then(non_builtin_result => {
+        final_output["isNonBuiltInRootCertInstalled"] = non_builtin_result;
+        sendToTelemetry("finished", final_output);
+
+        return true;
+      }).catch(err => {
+        final_output["exception"] = err.toSource();
+        sendToTelemetry("canceled", final_output);
       });
 
       return true;
     }).catch(err => {
-      TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-        "id": PROBE_ID,
-        "status": "canceled",
-        "exception": err.toSource()
-      });
-    });
+      // restore the default values after the experiment is over
+      readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
+      readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
 
-    return true;
-  }).catch(err => {
-    // restore the default values after the experiment is over
-    readwrite_prefs.set(VERSION_MAX_PREF, defaultMaxVersion);
-    readwrite_prefs.set(FALLBACK_LIMIT_PREF, defaultFallbackLimit);
-
-    TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, {
-      "id": PROBE_ID,
-      "status": "canceled",
-      "exception": err.toSource()
+      sendToTelemetry("canceled", {"exception": err.toSource()});
     });
-  });
+  } catch (ex) {
+    sendToTelemetry("canceled", {"exception": ex.toSource()});
+  }
 }
 
 function uninstall() {
