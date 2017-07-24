@@ -1,0 +1,127 @@
+﻿For this experiment, we reconfigure “security.tls.version.max” and “security.tls.version.fallback-limit” preferences to run some tests. In all the following scenarios, the values for these preferences should remain the same as before installing the add-on when the tests are over. Just simply record the values before installing the add-on and check them after the add-on is uninstalled.
+
+
+Scenario 1 - If either of these preferences has been set by the user, the add-on only reports the current values in addition to whether there is any non-builtin root certificate is installed:
+
+
+1- Go to about:config
+2- Modify either of these preferences
+3- Go to about:telemetry
+4- Select “Archived ping data”, and find “tls13-middlebox-testing” in the ping drop-down box. You must see something similar to the following:
+
+
+{
+  "maxVersion": {
+    "value": 4,
+    "isUserset": true
+  },
+  "fallbackLimit": {
+    "value": 3,
+    "isUserset": false
+  },
+  "isNonBuiltInRootCertInstalled": true
+}
+
+
+Scenario 2 - In case neither of these preferences was not userset, the add-on reconfigures them, makes XHR requests to some known websites, and reports the result in addition to default values for the preferences as well as whether there is any non-builtin root certificate is installed:
+
+
+1- make sure neither of these preferences was userset
+2- Install the add-on
+4- Select “Archived ping data”, and find “tls13-middlebox-testing” in the ping drop-down box. You must see something similar to the following:
+
+
+{
+  "defaultMaxVersion": 3,
+  "defaultFallbackLimit": 3,
+  "isNonBuiltInRootCertInstalled": true,
+  "tests": [
+    {
+      "result": {
+        "event": "load",
+        "responseCode": 200,
+        "status": 0,
+        "securityState": 262146,
+        "errorCode": 0,
+        "serverSha256Fingerprint": "55:45:DD:2D:5A:C8:E4:55:8A:F4:09:62:5A:2D:45:0A:85:17:0D:6F:F1:BF:3A:01:14:13:88:7F:CA:E3:4A:DF",
+        "isBuiltInRoot": true,
+        "protocolVersion": 3
+      },
+      "maxVersion": 4,
+      "fallbackLimit": 4,
+      "website": "disabled.tls13.com"
+    },
+    {
+      "result": {
+        "event": "load",
+        "responseCode": 200,
+        "status": 0,
+        "securityState": 262146,
+        "errorCode": 0,
+        "serverSha256Fingerprint": "65:94:4C:F6:80:BF:1B:1B:80:29:24:E8:EF:6D:B5:92:74:BD:A8:87:3F:48:0B:C5:B7:A1:0C:02:3C:5C:DB:04",
+        "isBuiltInRoot": true,
+        "protocolVersion": 3
+      },
+      "maxVersion": 3,
+      "fallbackLimit": 3,
+      "website": "control.tls12.com"
+    },
+    {
+      "result": {
+        "event": "load",
+        "responseCode": 200,
+        "status": 0,
+        "securityState": 262146,
+        "errorCode": 0,
+        "serverSha256Fingerprint": "93:2B:65:33:96:B3:E3:05:5A:42:D8:EF:CA:C1:04:3D:E0:C9:FD:41:F0:AA:EC:7C:3F:58:DB:E8:17:9B:22:9C",
+        "isBuiltInRoot": true,
+        "protocolVersion": 4
+      },
+      "maxVersion": 4,
+      "fallbackLimit": 4,
+      "website": "enabled.tls13.com"
+    }
+  ]
+}
+
+
+Scenario 3 - In case of any errors (e.g. network being off), the output is something like this:
+
+
+{
+  "defaultMaxVersion": 3,
+  "defaultFallbackLimit": 3,
+  "isNonBuiltInRootCertInstalled": true,
+  "tests": [
+    {
+      "result": {
+        "event": "error",
+        "responseCode": 0,
+        "status": 2152398878
+      },
+      "maxVersion": 3,
+      "fallbackLimit": 3,
+      "website": "control.tls12.com"
+    },
+    {
+      "result": {
+        "event": "error",
+        "responseCode": 0,
+        "status": 2152398878
+      },
+      "maxVersion": 4,
+      "fallbackLimit": 4,
+      "website": "disabled.tls13.com"
+    },
+    {
+      "result": {
+        "event": "error",
+        "responseCode": 0,
+        "status": 2152398878
+      },
+      "maxVersion": 4,
+      "fallbackLimit": 4,
+      "website": "enabled.tls13.com"
+    }
+  ]
+}

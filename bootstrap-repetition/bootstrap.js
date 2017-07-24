@@ -14,7 +14,7 @@ const REPEAT_COUNT = 5;
 
 const XHR_TIMEOUT = 10000;
 
-const TELEMETRY_PING_NAME = "tls13-middlebox-beta-repetition";
+const TELEMETRY_PING_NAME = "tls13-middlebox-repetition";
 
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
@@ -243,6 +243,13 @@ async function runConfigurations() {
   return results;
 }
 
+function sendToTelemetry(status, data) {
+  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
+    "id": PROBE_ID,
+    "status": status
+  }, data));
+}
+
 // check if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
 function hasUserSetPreference() {
   let readonly_prefs = new Preferences();
@@ -282,19 +289,10 @@ function startup() {
 function shutdown() {
 }
 
-function sendToTelemetry(status, data) {
-  TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
-    "id": PROBE_ID,
-    "status": status
-  }, data));
-}
-
 function install() {
   // send start of the test probe
   try {
     sendToTelemetry("started", {});
-
-    let k = f;
 
     // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
     if (hasUserSetPreference()) {
@@ -324,7 +322,7 @@ function install() {
         return true;
       }).catch(err => {
         final_output["exception"] = err.toSource();
-        sendToTelemetry("canceled", final_output);
+        sendToTelemetry("finished", final_output);
       });
 
       return true;
