@@ -37,12 +37,12 @@ error_messages = {}
 
 with open("codes.txt", "r") as f:
     for line in f:
-        tokens = line.strip().split()
+        tokens = line.strip().split('\t')
         
         if int(tokens[0], 16) not in error_messages:
             error_messages[int(tokens[0], 16)] = []
 
-        error_messages[int(tokens[0], 16)].append(tokens[1])
+        error_messages[int(tokens[0], 16)].append("%s (%s)" % (tokens[1], json.loads(tokens[2])))
 
 with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
     with gzip.open("/Users/asajjad/logs-beta-finished.json.gz", "r") as f:
