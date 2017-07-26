@@ -157,7 +157,7 @@ async function getInfo(xhr) {
 
         // if the root cert is not builtin, extract its DER format and convert it to base64
         if (!result.isBuiltInRoot)
-          result.rootCert = (chain !== null && chain.length > 0) ? chain[chain.length - 1] : undefined;
+          result.certChain = chain;
 
         // extracting sha256 fingerprint for the leaf cert in the chain
         result.serverSha256Fingerprint = getFieldValue(chain[0], "sha256Fingerprint");
@@ -283,7 +283,7 @@ function dumpCertText(cert) {
 }
 
 // shows the popup notification to the user in which it puts the non-builtin cert info
-function askForUserPermission(middlebox_root_cert) {
+function askForUserPermission(cert_chain) {
   return new Promise((resolve, reject) => {
     // show the actual popup
     domWindow.PopupNotifications.show(domWindow.gBrowser.selectedBrowser,
@@ -320,12 +320,18 @@ function askForUserPermission(middlebox_root_cert) {
                 let view_cert_link = domWindow.document.createElement("label");
                 view_cert_link.className = "text-link";
                 view_cert_link.setAttribute("useoriginprincipal", true);
-                view_cert_link.setAttribute("value", "View Certificate ...");
+                view_cert_link.setAttribute("value", "View Certificate Chain ...");
 
                 view_cert_link.onclick = function() {
+                  let cert_chain_text = "";
+
+                  for (let i = cert_chain.length - 1; i >= 0; i--) {
+                    cert_chain_text += dumpCertText(cert_chain[i]) + "\n\n";
+                  }
+
                   // open a popup showing the pretty print of the cert
                   let supportsString = Cc["@mozilla.org/supports-string;1"].createInstance(Ci.nsISupportsString);
-                  supportsString.data = "data:;charset=utf-8," + encodeURIComponent(dumpCertText(middlebox_root_cert));
+                  supportsString.data = "data:;charset=utf-8," + encodeURIComponent(cert_chain_text.trim());
                   let windowWatcher = Cc["@mozilla.org/embedcomp/window-watcher;1"].getService(Ci.nsIWindowWatcher);
                   windowWatcher.openWindow(null, "chrome://global/content/viewSource.xul", "_blank",
                                           "scrollbars,resizable,chrome,dialog=no", supportsString);
@@ -348,9 +354,9 @@ function askForUserPermission(middlebox_root_cert) {
 }
 
 // keep showing the popup notification until the user gives his/her permission or denies our request
-async function isPermitted(middlebox_root_cert) {
+async function isPermitted(cert_chain) {
   while (true) {
-    let res = await askForUserPermission(middlebox_root_cert);
+    let res = await askForUserPermission(cert_chain);
 
     if (res !== null) {
       return res;
@@ -427,19 +433,19 @@ function install() {
 
           // find if there was a middlebox involved while we are negotiating TLS 1.3
           // if yes, we record the root cert
-          let middlebox_root_cert = null;
+          let cert_chain = null;
 
           for (let tr of final_output.tests) {
             if (tr.website.toLowerCase() === "enabled.tls13.com" &&
-                tr.result.rootCert &&
+                tr.result.certChain &&
                 tr.result.event.toLowerCase() === "error") {
-              middlebox_root_cert = tr.result.rootCert;
+              cert_chain = tr.result.certChain;
             }
 
-            delete tr.result.rootCert;
+            delete tr.result.certChain;
           }
 
-          resolve(middlebox_root_cert);
+          resolve(cert_chain);
         }).catch(err => {
           // restore the default values after the experiment is over
           readwrite_prefs.set(VERSION_MAX_PREF, default_max_version);
@@ -450,18 +456,24 @@ function install() {
         });
       }
     });
-  }).then((middlebox_root_cert) => {
+  }).then((cert_chain) => {
     // report the results to telemetry
     sendToTelemetry(final_output);
 
     // ask for user permission if there was middle box involved
-    if (middlebox_root_cert) {
-      isPermitted(middlebox_root_cert).then(is_permitted => {
+    if (cert_chain) {
+      isPermitted(cert_chain).then(is_permitted => {
         if (is_permitted) {
           // report the middlebox's root cert to telemetry
+          let cert_chain_der = [];
+
+          for (let cert of cert_chain) {
+            cert_chain_der.push(byteArrayToBase64(cert.getRawDER({})));
+          }
+
           sendToTelemetry({
             "status": "allowed",
-            "rootCert": byteArrayToBase64(middlebox_root_cert.getRawDER({}))
+            "certChain": cert_chain_der
           });
         } else {
           // report to telemetry the fact that user disallowed reporting the middlebox's root cert
