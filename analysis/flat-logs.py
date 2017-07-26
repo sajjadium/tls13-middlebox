@@ -59,10 +59,12 @@ with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
                 status = test["result"]["status"] if "status" in test["result"] else None
                 error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
 
-                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s" % \
+                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s\t%s" % \
                       (data["id"], \
                        "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
-                       test["website"], test["result"]["event"], \
+                       test["website"],
+                       test["result"]["protocolVersion"] if "protocolVersion" in test["result"] else "N/A",
+                       test["result"]["event"], \
                        getRootCA(test["result"]),
                        getErrorString(status, error_code))
 
