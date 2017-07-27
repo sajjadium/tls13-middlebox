@@ -13,10 +13,17 @@ records = dataset.records(sc)
 
 logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox-beta")
 
-print logs.count()
+json_logs = logs.map(json.dumps)
+
+print json_logs.count()
 
 # beta_logs = logs.take(10000000)
 # beta_logs = logs.collect()
+
+
+
+# hdfs dfs -copyToLocal tls13-middlebox-beta-logs . ; hdfs dfs -rm -r -f tls13-middlebox-beta-logs
+json_logs.saveAsTextFile('tls13-middlebox-beta-logs')
 
 
 def findErrors(x):
@@ -26,7 +33,6 @@ finished = logs.filter(lambda x: x["payload"]["status"] == "finished")
 
 print finished.count()
 finished_logs = finished.take(10000000)
-
 
 with open('logs-beta-finished.json', 'w') as f:
     for l in finished_logs:
