@@ -1,0 +1,17 @@
+netwerk/base/nsISocketTransport.idl
+netwerk/base/nsSocketTransport2.cpp
+netwerk/ipc/NeckoChannelParams.ipdlh
+netwerk/protocol/http/HttpBaseChannel.cpp
+netwerk/protocol/http/HttpBaseChannel.h
+netwerk/protocol/http/HttpChannelChild.cpp
+netwerk/protocol/http/HttpChannelParent.cpp
+netwerk/protocol/http/HttpChannelParent.h
+netwerk/protocol/http/nsHttp.h
+netwerk/protocol/http/nsHttpChannel.cpp
+netwerk/protocol/http/nsHttpConnectionInfo.cpp
+netwerk/protocol/http/nsHttpConnectionInfo.h
+netwerk/protocol/http/nsHttpConnectionMgr.cpp
+netwerk/protocol/http/nsIHttpChannelInternal.idl
+netwerk/socket/nsISocketProvider.idl
+security/manager/ssl/nsNSSIOLayer.cpp
+

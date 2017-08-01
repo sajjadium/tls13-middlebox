@@ -1,68 +1,96 @@
-diff -r 36f95aeb4c77 netwerk/base/nsISocketTransport.idl
---- a/netwerk/base/nsISocketTransport.idl	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/base/nsISocketTransport.idl	Mon Jul 31 23:31:31 2017 -0700
-@@ -238,6 +238,10 @@
+diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
+--- a/netwerk/base/nsISocketTransport.idl
++++ b/netwerk/base/nsISocketTransport.idl
+@@ -238,6 +238,17 @@ interface nsISocketTransport : nsITransp
      const unsigned long BE_CONSERVATIVE = (1 << 7);
  
      /**
 +     */
-+    const unsigned long IS_TLS13 = (1 << 8);
++    const unsigned long TLS_FLAGS_0 = (1 << 8);
++    const unsigned long TLS_FLAGS_1 = (1 << 9);
++    const unsigned long TLS_FLAGS_2 = (1 << 10);
++    const unsigned long TLS_FLAGS_3 = (1 << 11);
++    const unsigned long TLS_FLAGS_4 = (1 << 12);
++    const unsigned long TLS_FLAGS_5 = (1 << 13);
++    const unsigned long TLS_FLAGS_6 = (1 << 14);
++    const unsigned long TLS_FLAGS_7 = (1 << 15);
 +
 +    /**
       * Socket QoS/ToS markings. Valid values are IPTOS_DSCP_AFxx or
       * IPTOS_CLASS_CSx (or IPTOS_DSCP_EF, but currently no supported
       * services require expedited-forwarding).
-diff -r 36f95aeb4c77 netwerk/base/nsSocketTransport2.cpp
---- a/netwerk/base/nsSocketTransport2.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/base/nsSocketTransport2.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -1213,6 +1213,9 @@
+diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTransport2.cpp
+--- a/netwerk/base/nsSocketTransport2.cpp
++++ b/netwerk/base/nsSocketTransport2.cpp
+@@ -1213,6 +1213,30 @@ nsSocketTransport::BuildSocket(PRFileDes
              if (mConnectionFlags & nsISocketTransport::BE_CONSERVATIVE)
                  controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
  
-+            if (mConnectionFlags & nsISocketTransport::IS_TLS13)
-+                controlFlags |= nsISocketProvider::IS_TLS13;
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_0)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_0;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_1)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_1;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_2)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_2;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_3)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_3;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_4)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_4;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_5)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_5;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_6)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_6;
++
++            if (mConnectionFlags & nsISocketTransport::TLS_FLAGS_7)
++                controlFlags |= nsISocketProvider::TLS_FLAGS_7;
 +
              nsCOMPtr<nsISupports> secinfo;
              if (i == 0) {
                  // if this is the first type, we'll want the
-diff -r 36f95aeb4c77 netwerk/ipc/NeckoChannelParams.ipdlh
---- a/netwerk/ipc/NeckoChannelParams.ipdlh	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/ipc/NeckoChannelParams.ipdlh	Mon Jul 31 23:31:31 2017 -0700
-@@ -128,6 +128,7 @@
+diff --git a/netwerk/ipc/NeckoChannelParams.ipdlh b/netwerk/ipc/NeckoChannelParams.ipdlh
+--- a/netwerk/ipc/NeckoChannelParams.ipdlh
++++ b/netwerk/ipc/NeckoChannelParams.ipdlh
+@@ -128,6 +128,7 @@ struct HttpChannelOpenArgs
    bool                        allowSpdy;
    bool                        allowAltSvc;
    bool                        beConservative;
-+  bool                        isTLS13;
++  uint8_t                     tlsFlags;
    OptionalLoadInfoArgs        loadInfo;
    OptionalHttpResponseHead    synthesizedResponseHead;
    nsCString                   synthesizedSecurityInfoSerialization;
-diff -r 36f95aeb4c77 netwerk/protocol/http/HttpBaseChannel.cpp
---- a/netwerk/protocol/http/HttpBaseChannel.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/HttpBaseChannel.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -177,6 +177,7 @@
+diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
+--- a/netwerk/protocol/http/HttpBaseChannel.cpp
++++ b/netwerk/protocol/http/HttpBaseChannel.cpp
+@@ -177,6 +177,7 @@ HttpBaseChannel::HttpBaseChannel()
    , mAllowSpdy(true)
    , mAllowAltSvc(true)
    , mBeConservative(false)
-+  , mIsTLS13(false)
++  , mTlsFlags(0)
    , mResponseTimeoutEnabled(true)
    , mAllRedirectsSameOrigin(true)
    , mAllRedirectsPassTimingAllowCheck(true)
-@@ -2622,6 +2623,22 @@
+@@ -2622,6 +2623,22 @@ HttpBaseChannel::SetBeConservative(bool 
  }
  
  NS_IMETHODIMP
-+HttpBaseChannel::GetIsTLS13(bool *aIsTLS13)
++HttpBaseChannel::GetTlsFlags(uint8_t *aTlsFlags)
 +{
-+  NS_ENSURE_ARG_POINTER(aIsTLS13);
++  NS_ENSURE_ARG_POINTER(aTlsFlags);
 +
-+  *aIsTLS13 = mIsTLS13;
++  *aTlsFlags = mTlsFlags;
 +  return NS_OK;
 +}
 +
 +NS_IMETHODIMP
-+HttpBaseChannel::SetIsTLS13(bool aIsTLS13)
++HttpBaseChannel::SetTlsFlags(uint8_t aTlsFlags)
 +{
-+  mIsTLS13 = aIsTLS13;
++  mTlsFlags = aTlsFlags;
 +  return NS_OK;
 +}
 +
@@ -70,234 +98,327 @@ diff -r 36f95aeb4c77 netwerk/protocol/http/HttpBaseChannel.cpp
  HttpBaseChannel::GetApiRedirectToURI(nsIURI ** aResult)
  {
    NS_ENSURE_ARG_POINTER(aResult);
-@@ -3428,6 +3445,8 @@
+@@ -3428,6 +3445,8 @@ HttpBaseChannel::SetupReplacementChannel
      MOZ_ASSERT(NS_SUCCEEDED(rv));
      rv = httpInternal->SetBeConservative(mBeConservative);
      MOZ_ASSERT(NS_SUCCEEDED(rv));
-+    rv = httpInternal->SetIsTLS13(mIsTLS13);
++    rv = httpInternal->SetTlsFlags(mTlsFlags);
 +    MOZ_ASSERT(NS_SUCCEEDED(rv));
  
      RefPtr<nsHttpChannel> realChannel;
      CallQueryInterface(newChannel, realChannel.StartAssignment());
-diff -r 36f95aeb4c77 netwerk/protocol/http/HttpBaseChannel.h
---- a/netwerk/protocol/http/HttpBaseChannel.h	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/HttpBaseChannel.h	Mon Jul 31 23:31:31 2017 -0700
-@@ -235,6 +235,8 @@
+diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/HttpBaseChannel.h
+--- a/netwerk/protocol/http/HttpBaseChannel.h
++++ b/netwerk/protocol/http/HttpBaseChannel.h
+@@ -235,6 +235,8 @@ public:
    NS_IMETHOD SetAllowAltSvc(bool aAllowAltSvc) override;
    NS_IMETHOD GetBeConservative(bool *aBeConservative) override;
    NS_IMETHOD SetBeConservative(bool aBeConservative) override;
-+  NS_IMETHOD GetIsTLS13(bool *aIsTLS13) override;
-+  NS_IMETHOD SetIsTLS13(bool aIsTLS13) override;
++  NS_IMETHOD GetTlsFlags(uint8_t *aTlsFlags) override;
++  NS_IMETHOD SetTlsFlags(uint8_t aTlsFlags) override;
    NS_IMETHOD GetApiRedirectToURI(nsIURI * *aApiRedirectToURI) override;
    virtual MOZ_MUST_USE nsresult AddSecurityMessage(const nsAString &aMessageTag, const nsAString &aMessageCategory);
    NS_IMETHOD TakeAllSecurityMessages(nsCOMArray<nsISecurityConsoleMessage> &aMessages) override;
-@@ -524,6 +526,7 @@
+@@ -524,6 +526,7 @@ protected:
    uint32_t                          mAllowSpdy                  : 1;
    uint32_t                          mAllowAltSvc                : 1;
    uint32_t                          mBeConservative             : 1;
-+  uint32_t                          mIsTLS13             : 1;
++  uint32_t                          mTlsFlags                   : 1;
    uint32_t                          mResponseTimeoutEnabled     : 1;
    // A flag that should be false only if a cross-domain redirect occurred
    uint32_t                          mAllRedirectsSameOrigin     : 1;
-diff -r 36f95aeb4c77 netwerk/protocol/http/HttpChannelChild.cpp
---- a/netwerk/protocol/http/HttpChannelChild.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/HttpChannelChild.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -2559,6 +2559,7 @@
+diff --git a/netwerk/protocol/http/HttpChannelChild.cpp b/netwerk/protocol/http/HttpChannelChild.cpp
+--- a/netwerk/protocol/http/HttpChannelChild.cpp
++++ b/netwerk/protocol/http/HttpChannelChild.cpp
+@@ -2559,6 +2559,7 @@ HttpChannelChild::ContinueAsyncOpen()
    openArgs.allowSpdy() = mAllowSpdy;
    openArgs.allowAltSvc() = mAllowAltSvc;
    openArgs.beConservative() = mBeConservative;
-+  openArgs.isTLS13() = mIsTLS13;
++  openArgs.tlsFlags() = mTlsFlags;
    openArgs.initialRwin() = mInitialRwin;
  
    uint32_t cacheKey = 0;
-diff -r 36f95aeb4c77 netwerk/protocol/http/HttpChannelParent.cpp
---- a/netwerk/protocol/http/HttpChannelParent.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/HttpChannelParent.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -135,7 +135,8 @@
+diff --git a/netwerk/protocol/http/HttpChannelParent.cpp b/netwerk/protocol/http/HttpChannelParent.cpp
+--- a/netwerk/protocol/http/HttpChannelParent.cpp
++++ b/netwerk/protocol/http/HttpChannelParent.cpp
+@@ -135,7 +135,8 @@ HttpChannelParent::Init(const HttpChanne
                         a.redirectionLimit(), a.allowSTS(),
                         a.thirdPartyFlags(), a.resumeAt(), a.startPos(),
                         a.entityID(), a.chooseApplicationCache(),
 -                       a.appCacheClientID(), a.allowSpdy(), a.allowAltSvc(), a.beConservative(),
 +                       a.appCacheClientID(), a.allowSpdy(), a.allowAltSvc(),
-+                       a.beConservative(), a.isTLS13(),
++                       a.beConservative(), a.tlsFlags(),
                         a.loadInfo(), a.synthesizedResponseHead(),
                         a.synthesizedSecurityInfoSerialization(),
                         a.cacheKey(), a.requestContextID(), a.preflightArgs(),
-@@ -451,6 +452,7 @@
+@@ -451,6 +452,7 @@ HttpChannelParent::DoAsyncOpen(  const U
                                   const bool&                allowSpdy,
                                   const bool&                allowAltSvc,
                                   const bool&                beConservative,
-+                                 const bool&                isTLS13,
++                                 const uint8_t&             tlsFlags,
                                   const OptionalLoadInfoArgs& aLoadInfoArgs,
                                   const OptionalHttpResponseHead& aSynthesizedResponseHead,
                                   const nsCString&           aSecurityInfoSerialization,
-@@ -677,6 +679,7 @@
+@@ -677,6 +679,7 @@ HttpChannelParent::DoAsyncOpen(  const U
    httpChannel->SetAllowSpdy(allowSpdy);
    httpChannel->SetAllowAltSvc(allowAltSvc);
    httpChannel->SetBeConservative(beConservative);
-+  httpChannel->SetIsTLS13(isTLS13);
++  httpChannel->SetTlsFlags(tlsFlags);
    httpChannel->SetInitialRwin(aInitialRwin);
    httpChannel->SetBlockAuthPrompt(aBlockAuthPrompt);
  
-diff -r 36f95aeb4c77 netwerk/protocol/http/HttpChannelParent.h
---- a/netwerk/protocol/http/HttpChannelParent.h	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/HttpChannelParent.h	Mon Jul 31 23:31:31 2017 -0700
-@@ -151,6 +151,7 @@
+diff --git a/netwerk/protocol/http/HttpChannelParent.h b/netwerk/protocol/http/HttpChannelParent.h
+--- a/netwerk/protocol/http/HttpChannelParent.h
++++ b/netwerk/protocol/http/HttpChannelParent.h
+@@ -151,6 +151,7 @@ protected:
                const bool&                allowSpdy,
                const bool&                allowAltSvc,
                const bool&                beConservative,
-+              const bool&                isTLS13,
++              const uint8_t&             tlsFlags,
                const OptionalLoadInfoArgs& aLoadInfoArgs,
                const OptionalHttpResponseHead& aSynthesizedResponseHead,
                const nsCString&           aSecurityInfoSerialization,
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsHttp.h
---- a/netwerk/protocol/http/nsHttp.h	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsHttp.h	Mon Jul 31 23:31:31 2017 -0700
-@@ -100,6 +100,9 @@
+diff --git a/netwerk/protocol/http/nsHttp.h b/netwerk/protocol/http/nsHttp.h
+--- a/netwerk/protocol/http/nsHttp.h
++++ b/netwerk/protocol/http/nsHttp.h
+@@ -100,6 +100,16 @@ typedef uint8_t nsHttpVersion;
  // on ERROR_NET_RESET.
  #define NS_HTTP_CONNECTION_RESTARTABLE  (1<<13)
  
 +//
-+#define NS_HTTP_IS_TLS13      (1<<14)
++#define NS_HTTP_TLS_FLAGS_0      (1<<14)
++#define NS_HTTP_TLS_FLAGS_1      (1<<15)
++#define NS_HTTP_TLS_FLAGS_2      (1<<16)
++#define NS_HTTP_TLS_FLAGS_3      (1<<17)
++#define NS_HTTP_TLS_FLAGS_4      (1<<18)
++#define NS_HTTP_TLS_FLAGS_5      (1<<19)
++#define NS_HTTP_TLS_FLAGS_6      (1<<20)
++#define NS_HTTP_TLS_FLAGS_7      (1<<21)
 +
  //-----------------------------------------------------------------------------
  // some default values
  //-----------------------------------------------------------------------------
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsHttpChannel.cpp
---- a/netwerk/protocol/http/nsHttpChannel.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsHttpChannel.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -486,6 +486,7 @@
-     mConnectionInfo->SetPrivate(mPrivateBrowsing);
+diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
+--- a/netwerk/protocol/http/nsHttpChannel.cpp
++++ b/netwerk/protocol/http/nsHttpChannel.cpp
+@@ -487,6 +487,33 @@ nsHttpChannel::Connect()
      mConnectionInfo->SetNoSpdy(mCaps & NS_HTTP_DISALLOW_SPDY);
      mConnectionInfo->SetBeConservative((mCaps & NS_HTTP_BE_CONSERVATIVE) || mBeConservative);
-+    mConnectionInfo->SetIsTLS13((mCaps & NS_HTTP_IS_TLS13) || mIsTLS13);
  
++    uint8_t tls_flags = 0;
++    if ((mCaps & NS_HTTP_TLS_FLAGS_0) || (mTlsFlags & (1 << 0))) {
++        tls_flags |= 1 << 0;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_1) || (mTlsFlags & (1 << 1))) {
++        tls_flags |= 1 << 1;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_2) || (mTlsFlags & (1 << 2))) {
++        tls_flags |= 1 << 2;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_3) || (mTlsFlags & (1 << 3))) {
++        tls_flags |= 1 << 3;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_4) || (mTlsFlags & (1 << 4))) {
++        tls_flags |= 1 << 4;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_5) || (mTlsFlags & (1 << 5))) {
++        tls_flags |= 1 << 5;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_6) || (mTlsFlags & (1 << 6))) {
++        tls_flags |= 1 << 6;
++    }
++    if ((mCaps & NS_HTTP_TLS_FLAGS_7) || (mTlsFlags & (1 << 7))) {
++        tls_flags |= 1 << 7;
++    }
++    mConnectionInfo->SetTlsFlags(tls_flags);
++
      // Consider opening a TCP connection right away.
      SpeculativeConnect();
-@@ -1050,6 +1051,9 @@
-     if (mBeConservative) {
+ 
+@@ -1051,6 +1078,31 @@ nsHttpChannel::SetupTransaction()
          mCaps |= NS_HTTP_BE_CONSERVATIVE;
      }
-+    if (mIsTLS13) {
-+        mCaps |= NS_HTTP_IS_TLS13;
-+    }
  
++    if (mTlsFlags & (1 << 0)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_0;
++    }
++    if (mTlsFlags & (1 << 1)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_1;
++    }
++    if (mTlsFlags & (1 << 2)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_2;
++    }
++    if (mTlsFlags & (1 << 3)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_3;
++    }
++    if (mTlsFlags & (1 << 4)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_4;
++    }
++    if (mTlsFlags & (1 << 5)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_5;
++    }
++    if (mTlsFlags & (1 << 6)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_6;
++    }
++    if (mTlsFlags & (1 << 7)) {
++        mCaps |= NS_HTTP_TLS_FLAGS_7;
++    }
++
      // Use the URI path if not proxying (transparent proxying such as proxy
      // CONNECT does not count here). Also figure out what HTTP version to use.
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsHttpConnectionInfo.cpp
---- a/netwerk/protocol/http/nsHttpConnectionInfo.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsHttpConnectionInfo.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -146,8 +146,9 @@
+     nsAutoCString buf, path;
+diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
+--- a/netwerk/protocol/http/nsHttpConnectionInfo.cpp
++++ b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
+@@ -146,8 +146,9 @@ void nsHttpConnectionInfo::BuildHashKey(
      // byte 4 is I/. I is for insecure scheme on TLS for http:// uris
      // byte 5 is X/. X is for disallow_spdy flag
      // byte 6 is C/. C is for be Conservative
-+    // byte 7 is C/. 4 is for is TLS 1.3
++    // byte 7 is for TLS flags
  
 -    mHashKey.AssignLiteral(".......");
 +    mHashKey.AssignLiteral("........");
      mHashKey.Append(keyHost);
      if (!mNetworkInterfaceId.IsEmpty()) {
          mHashKey.Append('(');
-@@ -259,6 +260,7 @@
+@@ -259,6 +260,7 @@ nsHttpConnectionInfo::Clone() const
      clone->SetInsecureScheme(GetInsecureScheme());
      clone->SetNoSpdy(GetNoSpdy());
      clone->SetBeConservative(GetBeConservative());
-+    clone->SetIsTLS13(GetIsTLS13());
++    clone->SetTlsFlags(GetTlsFlags());
      MOZ_ASSERT(clone->Equals(this));
  
      return clone;
-@@ -282,6 +284,7 @@
+@@ -282,6 +284,7 @@ nsHttpConnectionInfo::CloneAsDirectRoute
      clone->SetInsecureScheme(GetInsecureScheme());
      clone->SetNoSpdy(GetNoSpdy());
      clone->SetBeConservative(GetBeConservative());
-+    clone->SetIsTLS13(GetIsTLS13());
++    clone->SetTlsFlags(GetTlsFlags());
      if (!mNetworkInterfaceId.IsEmpty()) {
          clone->SetNetworkInterfaceId(mNetworkInterfaceId);
      }
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsHttpConnectionInfo.h
---- a/netwerk/protocol/http/nsHttpConnectionInfo.h	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsHttpConnectionInfo.h	Mon Jul 31 23:31:31 2017 -0700
-@@ -122,6 +122,11 @@
+diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/http/nsHttpConnectionInfo.h
+--- a/netwerk/protocol/http/nsHttpConnectionInfo.h
++++ b/netwerk/protocol/http/nsHttpConnectionInfo.h
+@@ -122,6 +122,9 @@ public:
                                              { mHashKey.SetCharAt(aBeConservative ? 'C' : '.', 6); }
      bool          GetBeConservative() const { return mHashKey.CharAt(6) == 'C'; }
  
-+    void          SetIsTLS13(bool aIsTLS13)
-+                                            { mHashKey.SetCharAt(aIsTLS13 ? '4'
-+                                            : '.', 7); }
-+    bool          GetIsTLS13() const { return mHashKey.CharAt(7) == '4'; }
++    void          SetTlsFlags(uint8_t aTlsFlags) { mHashKey.SetCharAt(aTlsFlags, 7); }
++    uint8_t       GetTlsFlags() const { return mHashKey.CharAt(7); }
 +
      const nsCString &GetNetworkInterfaceId() const { return mNetworkInterfaceId; }
  
      const nsCString &GetNPNToken() { return mNPNToken; }
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsHttpConnectionMgr.cpp
---- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -3788,6 +3788,11 @@
+diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
+--- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp
++++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
+@@ -3788,6 +3788,46 @@ nsHalfOpenSocket::SetupStreams(nsISocket
          tmpFlags |= nsISocketTransport::BE_CONSERVATIVE;
      }
  
-+    if ((mCaps & NS_HTTP_IS_TLS13) || ci->GetIsTLS13()) {
-+        LOG(("Setting Socket to IS_TLS13"));
-+        tmpFlags |= nsISocketTransport::IS_TLS13;
++    if ((mCaps & NS_HTTP_TLS_FLAGS_0) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_0"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_0;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_1) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_1"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_1;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_2) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_2"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_2;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_3) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_3"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_3;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_4) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_4"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_4;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_5) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_5"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_5;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_6) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_6"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_6;
++    }
++
++    if ((mCaps & NS_HTTP_TLS_FLAGS_7) || ci->GetTlsFlags()) {
++        LOG(("Setting Socket to TLS_FLAGS_7"));
++        tmpFlags |= nsISocketTransport::TLS_FLAGS_7;
 +    }
 +
      // For backup connections, we disable IPv6. That's because some users have
      // broken IPv6 connectivity (leading to very long timeouts), and disabling
      // IPv6 on the backup connection gives them a much better user experience
-diff -r 36f95aeb4c77 netwerk/protocol/http/nsIHttpChannelInternal.idl
---- a/netwerk/protocol/http/nsIHttpChannelInternal.idl	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/protocol/http/nsIHttpChannelInternal.idl	Mon Jul 31 23:31:31 2017 -0700
-@@ -216,6 +216,10 @@
+diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol/http/nsIHttpChannelInternal.idl
+--- a/netwerk/protocol/http/nsIHttpChannelInternal.idl
++++ b/netwerk/protocol/http/nsIHttpChannelInternal.idl
+@@ -216,6 +216,10 @@ interface nsIHttpChannelInternal : nsISu
       */
      [must_use] attribute boolean beConservative;
  
 +    /**
 +     */
-+    [must_use] attribute boolean isTLS13;
++    [must_use] attribute uint8_t tlsFlags;
 +
      [must_use] readonly attribute PRTime lastModifiedTime;
  
      /**
-diff -r 36f95aeb4c77 netwerk/socket/nsISocketProvider.idl
---- a/netwerk/socket/nsISocketProvider.idl	Thu Jul 27 18:16:52 2017 +0200
-+++ b/netwerk/socket/nsISocketProvider.idl	Mon Jul 31 23:31:31 2017 -0700
-@@ -112,6 +112,10 @@
+diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
+--- a/netwerk/socket/nsISocketProvider.idl
++++ b/netwerk/socket/nsISocketProvider.idl
+@@ -112,6 +112,17 @@ interface nsISocketProvider : nsISupport
       * default is false.
       */
      const unsigned long BE_CONSERVATIVE = 1 << 4;
 +
 +    /**
 +     */
-+    const unsigned long IS_TLS13 = 1 << 5;
++    const unsigned long TLS_FLAGS_0 = 1 << 5;
++    const unsigned long TLS_FLAGS_1 = 1 << 6;
++    const unsigned long TLS_FLAGS_2 = 1 << 7;
++    const unsigned long TLS_FLAGS_3 = 1 << 8;
++    const unsigned long TLS_FLAGS_4 = 1 << 9;
++    const unsigned long TLS_FLAGS_5 = 1 << 10;
++    const unsigned long TLS_FLAGS_6 = 1 << 11;
++    const unsigned long TLS_FLAGS_7 = 1 << 12;
  };
  
  %{C++
-diff -r 36f95aeb4c77 security/manager/ssl/nsNSSIOLayer.cpp
---- a/security/manager/ssl/nsNSSIOLayer.cpp	Thu Jul 27 18:16:52 2017 +0200
-+++ b/security/manager/ssl/nsNSSIOLayer.cpp	Mon Jul 31 23:31:31 2017 -0700
-@@ -2424,6 +2424,15 @@
+diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
+--- a/security/manager/ssl/nsNSSIOLayer.cpp
++++ b/security/manager/ssl/nsNSSIOLayer.cpp
+@@ -2424,6 +2424,15 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      return NS_ERROR_FAILURE;
    }
  
-+  if (infoObject->GetProviderFlags() & nsISocketProvider::IS_TLS13) {
++  if (infoObject->GetProviderFlags() & nsISocketProvider::TLS_FLAGS_0) {
 +    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-+            ("[%p] nsSSLIOLayerSetOptions: range.max set to 1.3 due to IS_TLS13 flag\n",
++            ("[%p] nsSSLIOLayerSetOptions: range.max set to 1.3 due to TLS 1.3 flag\n",
 +             fd));
-+    range.max = SSL_LIBRARY_VERSION_TLS_1_3;
-+  } else {
 +    range.max = SSL_LIBRARY_VERSION_TLS_1_2;
++  } else {
++    range.max = SSL_LIBRARY_VERSION_TLS_1_3;
 +  }
 +
    if ((infoObject->GetProviderFlags() & nsISocketProvider::BE_CONSERVATIVE) &&
        (range.max > SSL_LIBRARY_VERSION_TLS_1_2)) {
      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-@@ -2521,6 +2530,9 @@
+@@ -2521,6 +2530,7 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
    if (flags & nsISocketProvider::BE_CONSERVATIVE) {
      peerId.AppendLiteral("beConservative:");
    }
-+  if (flags & nsISocketProvider::IS_TLS13) {
-+    peerId.AppendLiteral("isTLS13:");
-+  }
++  peerId.AppendLiteral("tlsFlags:");
    peerId.Append(host);
    peerId.Append(':');
    peerId.AppendInt(port);
