@@ -1,10 +1,11 @@
 diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
 --- a/netwerk/base/nsISocketTransport.idl
 +++ b/netwerk/base/nsISocketTransport.idl
-@@ -238,6 +238,17 @@ interface nsISocketTransport : nsITransp
+@@ -238,6 +238,18 @@ interface nsISocketTransport : nsITransp
      const unsigned long BE_CONSERVATIVE = (1 << 7);
  
      /**
++     * A generic flag to customize TLS configurations
 +     */
 +    const unsigned long TLS_FLAGS_0 = (1 << 8);
 +    const unsigned long TLS_FLAGS_1 = (1 << 9);
@@ -185,7 +186,7 @@ diff --git a/netwerk/protocol/http/nsHttp.h b/netwerk/protocol/http/nsHttp.h
  // on ERROR_NET_RESET.
  #define NS_HTTP_CONNECTION_RESTARTABLE  (1<<13)
  
-+//
++// A generic flag to customize TLS configuration
 +#define NS_HTTP_TLS_FLAGS_0      (1<<14)
 +#define NS_HTTP_TLS_FLAGS_1      (1<<15)
 +#define NS_HTTP_TLS_FLAGS_2      (1<<16)
@@ -377,12 +378,13 @@ diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol
 diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
 --- a/netwerk/socket/nsISocketProvider.idl
 +++ b/netwerk/socket/nsISocketProvider.idl
-@@ -112,6 +112,17 @@ interface nsISocketProvider : nsISupport
+@@ -112,6 +112,18 @@ interface nsISocketProvider : nsISupport
       * default is false.
       */
      const unsigned long BE_CONSERVATIVE = 1 << 4;
 +
 +    /**
++     * A generic flag to customize TLS configuration
 +     */
 +    const unsigned long TLS_FLAGS_0 = 1 << 5;
 +    const unsigned long TLS_FLAGS_1 = 1 << 6;

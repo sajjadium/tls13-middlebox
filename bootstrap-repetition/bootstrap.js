@@ -182,7 +182,7 @@ function makeRequest(config) {
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_INITIAL_DOCUMENT_URI;
 
       let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-      internalChannel.isTLS13 = true;
+      internalChannel.tlsFlags = 1;
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
