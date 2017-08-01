@@ -44,25 +44,40 @@ with open("codes.txt", "r") as f:
 
         error_messages[int(tokens[0], 16)].append(tokens[1])
 
-with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
-    with gzip.open("/Users/asajjad/logs-beta-finished.json.gz", "r") as f:
-        for line in f:
-            data = json.loads(line.strip())
+status_stats = {}
+event_stats = {}
 
-            if data["payload"]["status"] != "finished":
-                continue
+for line in sys.stdin:
+    data = json.loads(line.strip())
 
-            for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
-                #if test["result"]["event"] in ["load", "loadend"]:
-                #    continue
+    if data["payload"]["status"] not in status_stats:
+        status_stats[data["payload"]["status"]] = 0
 
-                status = test["result"]["status"] if "status" in test["result"] else None
-                error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
+    status_stats[data["payload"]["status"]] += 1
 
-                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s" % \
-                      (data["id"], \
-                       "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
-                       test["website"], test["result"]["event"], \
-                       getRootCA(test["result"]),
-                       getErrorString(status, error_code))
+    if data["payload"]["status"] != "finished":
+        continue
+
+    for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
+        #if test["result"]["event"] in ["load", "loadend"]:
+        #    continue
+
+        if test["result"]["event"] not in event_stats:
+            event_stats[test["result"]["event"]] = 0
+
+        event_stats[test["result"]["event"]] += 1
+
+        status = test["result"]["status"] if "status" in test["result"] else None
+        error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
+        '''
+        print "%s\t%s\t%s\t%s\t%s\t%s" % \
+              (data["id"], \
+               "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
+               test["website"], test["result"]["event"], \
+               getRootCA(test["result"]),
+               getErrorString(status, error_code))
+        '''
+
+print json.dumps(status_stats, indent=4, separators=(',', ': '))
+print json.dumps(event_stats, indent=4, separators=(',', ': '))
 

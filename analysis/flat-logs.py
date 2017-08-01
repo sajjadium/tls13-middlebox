@@ -44,27 +44,25 @@ with open("codes.txt", "r") as f:
 
         error_messages[int(tokens[0], 16)].append("%s (%s)" % (tokens[1], json.loads(tokens[2])))
 
-with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
-    with gzip.open("/Users/asajjad/logs-beta-finished.json.gz", "r") as f:
-        for line in f:
-            data = json.loads(line.strip())
+for line in sys.stdin:
+    data = json.loads(line.strip())
 
-            if data["payload"]["status"] != "finished":
-                continue
+    if data["payload"]["status"] != "finished":
+        continue
 
-            for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
-                #if test["result"]["event"] in ["load", "loadend"]:
-                #    continue
+    for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
+        #if test["result"]["event"] in ["load", "loadend"]:
+        #    continue
 
-                status = test["result"]["status"] if "status" in test["result"] else None
-                error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
+        status = test["result"]["status"] if "status" in test["result"] else None
+        error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
 
-                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s\t%s" % \
-                      (data["id"], \
-                       "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
-                       test["website"],
-                       test["result"]["protocolVersion"] if "protocolVersion" in test["result"] else "N/A",
-                       test["result"]["event"], \
-                       getRootCA(test["result"]),
-                       getErrorString(status, error_code))
+        print "%s\t%s\t%s\t%s\t%s\t%s\t%s" % \
+              (data["id"], \
+               "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
+               test["website"],
+               test["result"]["protocolVersion"] if "protocolVersion" in test["result"] else "N/A",
+               test["result"]["event"], \
+               getRootCA(test["result"]),
+               getErrorString(status, error_code))
 
