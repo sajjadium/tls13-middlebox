@@ -45,7 +45,7 @@ with open("codes.txt", "r") as f:
         error_messages[int(tokens[0], 16)].append("%s (%s)" % (tokens[1], json.loads(tokens[2])))
 
 with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
-    with gzip.open("/Users/asajjad/logs-beta-finished.json.gz", "r") as f:
+    with gzip.open("/Users/asajjad/logs-beta.json.gz", "r") as f:
         for line in f:
             data = json.loads(line.strip())
 
@@ -53,9 +53,6 @@ with gzip.open("/Users/asajjad/logs-beta.flat.gz", "w") as outf:
                 continue
 
             for test in sorted(data["payload"]["tests"], key=lambda x: x["website"]):
-                #if test["result"]["event"] in ["load", "loadend"]:
-                #    continue
-
                 status = test["result"]["status"] if "status" in test["result"] else None
                 error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
 
