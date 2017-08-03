@@ -1,4 +1,8 @@
 
+# coding: utf-8
+
+# In[1]:
+
 from moztelemetry.dataset import Dataset
 import json
 
@@ -21,10 +25,14 @@ print json_logs.count()
 # beta_logs = logs.collect()
 
 
+# In[2]:
+
 
 # hdfs dfs -copyToLocal tls13-middlebox-beta-logs . ; hdfs dfs -rm -r -f tls13-middlebox-beta-logs
 json_logs.saveAsTextFile('tls13-middlebox-beta-logs')
 
+
+# In[25]:
 
 def findErrors(x):
      return x["payload"]["status"] == "finished"
@@ -38,6 +46,8 @@ with open('logs-beta-finished.json', 'w') as f:
     for l in finished_logs:
         print >> f, json.dumps(l)
 
+
+# In[8]:
 
 def intToHex(num):
     return hex(num) if num is not None else None
@@ -71,6 +81,8 @@ with open("codes.txt", "r") as f:
 
 getErrorString(2152398878, None)
 
+
+# In[15]:
 
 import sys
 import traceback
@@ -131,14 +143,16 @@ with open("logs-beta.flat", "w") as outf:
                 status = test["result"]["status"] if "status" in test["result"] else None
                 error_code = test["result"]["errorCode"] if "errorCode" in test["result"] else None
 
-                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s" % \
-                      (data["id"], \
-                       "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No", \
-                       test["website"], test["result"]["event"], \
-                       getRootCA(test["result"]),
+                print >> outf, "%s\t%s\t%s\t%s\t%s\t%s" %                       (data["id"],                        "Yes" if data["payload"]["isNonBuiltInRootCertInstalled"] else "No",                        test["website"], test["result"]["event"],                        getRootCA(test["result"]),
                        getErrorString(status, error_code))
 
 
+# In[6]:
+
+
+
+
+# In[ ]:
 
 
 
