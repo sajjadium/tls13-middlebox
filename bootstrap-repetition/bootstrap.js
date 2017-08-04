@@ -181,8 +181,10 @@ function makeRequest(config) {
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_INITIAL_DOCUMENT_URI;
 
-      let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-      internalChannel.tlsFlags = 100;
+      if (Math.random() < 0.5) {
+        let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
+        internalChannel.tlsFlags = 100;
+      }
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
