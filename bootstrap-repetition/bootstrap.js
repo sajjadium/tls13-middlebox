@@ -168,7 +168,8 @@ function makeRequest(config) {
 
       let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-      xhr.open("GET", config.website, true);
+      // xhr.open("GET", config.website, true);
+      xhr.open("GET", "https://scontent.fmel1-1.fna.fbcdn.net/", true);
 
       xhr.timeout = XHR_TIMEOUT;
 
@@ -181,10 +182,10 @@ function makeRequest(config) {
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_INITIAL_DOCUMENT_URI;
 
-      if (Math.random() < 0.5) {
+      // if (Math.random() < 0.5) {
         let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-        internalChannel.tlsFlags = 100;
-      }
+        // internalChannel.tlsFlags = 0x3;
+      // }
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
