@@ -451,7 +451,29 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
          mUsingConnect = mEndToEndSSL;  // SSL always uses CONNECT
          uint32_t resolveFlags = 0;
          if (NS_SUCCEEDED(mProxyInfo->GetResolveFlags(&resolveFlags)) &&
-@@ -254,16 +255,17 @@ nsHttpConnectionInfo::Clone() const
+@@ -143,16 +144,21 @@ void nsHttpConnectionInfo::BuildHashKey(
+     // byte 1 is S/. S is for end to end ssl such as https:// uris
+     // byte 2 is A/. A is for an anonymous channel (no cookies, etc..)
+     // byte 3 is P/. P is for a private browising channel
+     // byte 4 is I/. I is for insecure scheme on TLS for http:// uris
+     // byte 5 is X/. X is for disallow_spdy flag
+     // byte 6 is C/. C is for be Conservative
+ 
+     mHashKey.AssignLiteral(".......");
++
++    char buf[25];
++    sprintf(buf, "[tlsflags0x%08x]", mTlsFlags);
++    mHashKey.Append(buf);
++
+     mHashKey.Append(keyHost);
+     if (!mNetworkInterfaceId.IsEmpty()) {
+         mHashKey.Append('(');
+         mHashKey.Append(mNetworkInterfaceId);
+         mHashKey.Append(')');
+     }
+     mHashKey.Append(':');
+     mHashKey.AppendInt(keyPort);
+@@ -254,16 +260,17 @@ nsHttpConnectionInfo::Clone() const
      }
  
      // Make sure the anonymous, insecure-scheme, and private flags are transferred
@@ -469,7 +491,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
  void
  nsHttpConnectionInfo::CloneAsDirectRoute(nsHttpConnectionInfo **outCI)
  {
-@@ -277,16 +279,17 @@ nsHttpConnectionInfo::CloneAsDirectRoute
+@@ -277,16 +284,17 @@ nsHttpConnectionInfo::CloneAsDirectRoute
                                   EmptyCString(), mUsername, mProxyInfo,
                                   mOriginAttributes, mEndToEndSSL);
      // Make sure the anonymous, insecure-scheme, and private flags are transferred
@@ -490,7 +512,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/http/nsHttpConnectionInfo.h
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.h
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.h
-@@ -117,16 +117,31 @@ public:
+@@ -117,16 +117,26 @@ public:
      void          SetNoSpdy(bool aNoSpdy)
                                         { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
      bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
@@ -502,14 +524,9 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
 +    void          SetTlsFlags(uint32_t aTlsFlags) {
 +                      mTlsFlags = aTlsFlags;
 +
-+                      mHashKey.Append('[');
-+
-+                      // store the hex representation of mTlsFlags
-+                      char buf[20];
++                      char buf[15];
 +                      sprintf(buf, "%08x", mTlsFlags);
-+                      mHashKey.Append(buf);
-+
-+                      mHashKey.Append(']');
++                      mHashKey.Replace(18, 8, buf, 8);
 +                  }
 +
 +    uint32_t      GetTlsFlags() const { return mTlsFlags; }
@@ -522,7 +539,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
      const OriginAttributes &GetOriginAttributes() { return mOriginAttributes; }
  
      // Returns true for any kind of proxy (http, socks, https, etc..)
-@@ -171,16 +186,18 @@ private:
+@@ -171,16 +181,18 @@ private:
      nsCOMPtr<nsProxyInfo>  mProxyInfo;
      bool                   mUsingHttpProxy;
      bool                   mUsingHttpsProxy;
@@ -1053,7 +1070,29 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      range.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
  
-@@ -2539,27 +2562,28 @@ nsresult
+@@ -2517,16 +2540,21 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+     peerId.AppendLiteral("private:");
+   }
+   if (flags & nsISocketProvider::MITM_OK) {
+     peerId.AppendLiteral("bypassAuth:");
+   }
+   if (flags & nsISocketProvider::BE_CONSERVATIVE) {
+     peerId.AppendLiteral("beConservative:");
+   }
++
++  char buf[25];
++  sprintf(buf, "tlsflags0x%08x:", infoObject->GetProviderTlsFlags());
++  peerId.Append(buf);
++
+   peerId.Append(host);
+   peerId.Append(':');
+   peerId.AppendInt(port);
+   nsAutoCString suffix;
+   infoObject->GetOriginAttributes().CreateSuffix(suffix);
+   peerId.Append(suffix);
+   if (SECSuccess != SSL_SetSockPeerID(fd, peerId.get())) {
+     return NS_ERROR_FAILURE;
+@@ -2539,27 +2567,28 @@ nsresult
  nsSSLIOLayerAddToSocket(int32_t family,
                          const char* host,
                          int32_t port,
