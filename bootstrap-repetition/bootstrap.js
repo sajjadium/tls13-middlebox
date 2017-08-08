@@ -185,7 +185,8 @@ function makeRequest(config) {
 
       // if (Math.random() < 0.5) {
         let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-        internalChannel.tlsFlags = 0x1;
+        internalChannel.tlsFlags = 0x100;
+        internalChannel.beConservative = true;
       // }
 
       xhr.addEventListener("load", e => {
