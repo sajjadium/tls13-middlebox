@@ -168,8 +168,9 @@ function makeRequest(config) {
 
       let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
-      // xhr.open("GET", config.website, true);
-      xhr.open("GET", "https://scontent.fmel1-1.fna.fbcdn.net/", true);
+      xhr.open("GET", config.website, true);
+      // xhr.open("GET", "https://scontent.fmel1-1.fna.fbcdn.net/", true);
+      // xhr.open("GET", "https://www.tls13.facebook.com", true);
 
       xhr.timeout = XHR_TIMEOUT;
 
@@ -184,7 +185,7 @@ function makeRequest(config) {
 
       // if (Math.random() < 0.5) {
         let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-        // internalChannel.tlsFlags = 0x3;
+        internalChannel.tlsFlags = 0x1;
       // }
 
       xhr.addEventListener("load", e => {
@@ -301,9 +302,9 @@ function install() {
     sendToTelemetry("started", {});
 
     // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-    if (hasUserSetPreference()) {
-      return;
-    }
+    // if (hasUserSetPreference()) {
+    //   return;
+    // }
 
     // record the default values before the experiment starts
     let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);

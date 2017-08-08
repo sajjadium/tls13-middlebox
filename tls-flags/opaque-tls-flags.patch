@@ -27,7 +27,25 @@ diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTranspo
 diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTransport2.cpp
 --- a/netwerk/base/nsSocketTransport2.cpp
 +++ b/netwerk/base/nsSocketTransport2.cpp
-@@ -1220,31 +1220,31 @@ nsSocketTransport::BuildSocket(PRFileDes
+@@ -770,16 +770,17 @@ nsSocketTransport::nsSocketTransport()
+     , mTypeCount(0)
+     , mPort(0)
+     , mProxyPort(0)
+     , mOriginPort(0)
+     , mProxyTransparent(false)
+     , mProxyTransparentResolvesHost(false)
+     , mHttpsProxy(false)
+     , mConnectionFlags(0)
++    , mTlsFlags(0)
+     , mReuseAddrPort(false)
+     , mState(STATE_CLOSED)
+     , mAttached(false)
+     , mInputClosed(true)
+     , mOutputClosed(true)
+     , mResolving(false)
+     , mNetAddrIsSet(false)
+     , mSelfAddrIsSet(false)
+@@ -1220,31 +1221,31 @@ nsSocketTransport::BuildSocket(PRFileDes
  
                  // when https proxying we want to just connect to the proxy as if
                  // it were the end host (i.e. expect the proxy's cert)
@@ -61,7 +79,7 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
                  break;
  
              // if the service was ssl or starttls, we want to hold onto the socket info
-@@ -2980,16 +2980,31 @@ nsSocketTransport::GetConnectionFlags(ui
+@@ -2980,16 +2981,30 @@ nsSocketTransport::GetConnectionFlags(ui
  NS_IMETHODIMP
  nsSocketTransport::SetConnectionFlags(uint32_t value)
  {
@@ -81,7 +99,6 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
 +nsSocketTransport::SetTlsFlags(uint32_t value)
 +{
 +    mTlsFlags = value;
-+    mIsPrivate = value & nsISocketTransport::NO_PERMANENT_STORAGE;
 +    return NS_OK;
 +}
 +
@@ -189,6 +206,25 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/H
  }
  
  NS_IMETHODIMP
+@@ -3418,16 +3435,18 @@ HttpBaseChannel::SetupReplacementChannel
+     rv = httpInternal->SetThirdPartyFlags(mThirdPartyFlags);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
+     rv = httpInternal->SetAllowSpdy(mAllowSpdy);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
+     rv = httpInternal->SetAllowAltSvc(mAllowAltSvc);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
+     rv = httpInternal->SetBeConservative(mBeConservative);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
++    rv = httpInternal->SetTlsFlags(mTlsFlags);
++    MOZ_ASSERT(NS_SUCCEEDED(rv));
+ 
+     RefPtr<nsHttpChannel> realChannel;
+     CallQueryInterface(newChannel, realChannel.StartAssignment());
+     if (realChannel) {
+       rv = realChannel->SetTopWindowURI(mTopWindowURI);
+       MOZ_ASSERT(NS_SUCCEEDED(rv));
+     }
+ 
 diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/HttpBaseChannel.h
 --- a/netwerk/protocol/http/HttpBaseChannel.h
 +++ b/netwerk/protocol/http/HttpBaseChannel.h
@@ -397,27 +433,24 @@ diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsH
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.cpp
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
-@@ -141,18 +141,19 @@ void nsHttpConnectionInfo::BuildHashKey(
-     // The hashkey has 4 fields followed by host connection info
-     // byte 0 is P/T/. {P,T} for Plaintext/TLS Proxy over HTTP
-     // byte 1 is S/. S is for end to end ssl such as https:// uris
-     // byte 2 is A/. A is for an anonymous channel (no cookies, etc..)
-     // byte 3 is P/. P is for a private browising channel
-     // byte 4 is I/. I is for insecure scheme on TLS for http:// uris
-     // byte 5 is X/. X is for disallow_spdy flag
-     // byte 6 is C/. C is for be Conservative
-+    // byte 7-14 is for opaque TLS flags
+@@ -87,16 +87,17 @@ nsHttpConnectionInfo::Init(const nsACStr
+     LOG(("Init nsHttpConnectionInfo @%p\n", this));
  
--    mHashKey.AssignLiteral(".......");
-+    mHashKey.AssignLiteral("...............");
-     mHashKey.Append(keyHost);
-     if (!mNetworkInterfaceId.IsEmpty()) {
-         mHashKey.Append('(');
-         mHashKey.Append(mNetworkInterfaceId);
-         mHashKey.Append(')');
-     }
-     mHashKey.Append(':');
-     mHashKey.AppendInt(keyPort);
+     mUsername = username;
+     mProxyInfo = proxyInfo;
+     mEndToEndSSL = e2eSSL;
+     mUsingConnect = false;
+     mNPNToken = npnToken;
+     mOriginAttributes = originAttributes;
++    mTlsFlags = 0x0;
+ 
+     mUsingHttpsProxy = (proxyInfo && proxyInfo->IsHTTPS());
+     mUsingHttpProxy = mUsingHttpsProxy || (proxyInfo && proxyInfo->IsHTTP());
+ 
+     if (mUsingHttpProxy) {
+         mUsingConnect = mEndToEndSSL;  // SSL always uses CONNECT
+         uint32_t resolveFlags = 0;
+         if (NS_SUCCEEDED(mProxyInfo->GetResolveFlags(&resolveFlags)) &&
 @@ -254,16 +255,17 @@ nsHttpConnectionInfo::Clone() const
      }
  
@@ -457,7 +490,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/http/nsHttpConnectionInfo.h
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.h
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.h
-@@ -117,16 +117,36 @@ public:
+@@ -117,16 +117,31 @@ public:
      void          SetNoSpdy(bool aNoSpdy)
                                         { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
      bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
@@ -467,24 +500,19 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
      bool          GetBeConservative() const { return mHashKey.CharAt(6) == 'C'; }
  
 +    void          SetTlsFlags(uint32_t aTlsFlags) {
++                      mTlsFlags = aTlsFlags;
++
++                      mHashKey.Append('[');
++
++                      // store the hex representation of mTlsFlags
 +                      char buf[20];
-+                      sprintf(buf, "%08x", aTlsFlags);
-+                      for (int i = 0; i < 8; i++)
-+                          mHashKey.SetCharAt(buf[i], 7 + i);
++                      sprintf(buf, "%08x", mTlsFlags);
++                      mHashKey.Append(buf);
++
++                      mHashKey.Append(']');
 +                  }
 +
-+    uint32_t      GetTlsFlags() const {
-+                      char buf[20];
-+                      memset(buf, 0, sizeof(buf));
-+
-+                      for (int i = 0; i < 8; i++)
-+                          buf[i] = mHashKey.CharAt(i + 7);
-+
-+                      uint32_t ret = 0;
-+                      sscanf(buf, "%x", &ret);
-+
-+                      return ret;
-+                  }
++    uint32_t      GetTlsFlags() const { return mTlsFlags; }
 +
      const nsCString &GetNetworkInterfaceId() const { return mNetworkInterfaceId; }
  
@@ -494,6 +522,25 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
      const OriginAttributes &GetOriginAttributes() { return mOriginAttributes; }
  
      // Returns true for any kind of proxy (http, socks, https, etc..)
+@@ -171,16 +186,18 @@ private:
+     nsCOMPtr<nsProxyInfo>  mProxyInfo;
+     bool                   mUsingHttpProxy;
+     bool                   mUsingHttpsProxy;
+     bool                   mEndToEndSSL;
+     bool                   mUsingConnect;  // if will use CONNECT with http proxy
+     nsCString              mNPNToken;
+     OriginAttributes       mOriginAttributes;
+ 
++    uint32_t               mTlsFlags;
++
+ // for RefPtr
+     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo)
+ };
+ 
+ } // namespace net
+ } // namespace mozilla
+ 
+ #endif // nsHttpConnectionInfo_h__
 diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 --- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 +++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
@@ -976,7 +1023,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    *fd = sock;
    return NS_OK;
  }
-@@ -2420,16 +2430,26 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+@@ -2420,16 +2430,29 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      }
    }
  
@@ -985,10 +1032,13 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      return NS_ERROR_FAILURE;
    }
  
++  // here are the examples of how we can use the new TLS flags
++  // set the max version of tls to 1.3
 +  if (infoObject->GetProviderTlsFlags() & 0x1) {
-+    range.max = SSL_LIBRARY_VERSION_TLS_1_2;
++    range.max = SSL_LIBRARY_VERSION_TLS_1_3;
 +  }
 +
++  // tell the server to use a new type of ServerHello
 +  if (infoObject->GetProviderTlsFlags() & 0x2) {
 +    if (SSL_UseAltServerHelloType(fd, PR_TRUE) != SECSuccess) {
 +      return NS_ERROR_FAILURE;
@@ -1003,7 +1053,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      range.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
  
-@@ -2539,27 +2559,28 @@ nsresult
+@@ -2539,27 +2562,28 @@ nsresult
  nsSSLIOLayerAddToSocket(int32_t family,
                          const char* host,
                          int32_t port,
