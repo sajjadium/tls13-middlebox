@@ -1,26 +1,27 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[6]:
 
 from moztelemetry.dataset import Dataset
 import json
 
 dataset = Dataset.from_source('telemetry')
 
-dataset = (dataset.where(docType='OTHER')
+# dataset = (dataset.where(docType='OTHER')
+
+dataset = (dataset.where(docType='tls13-middlebox-repetition')
                   .where(appName='Firefox')
-                  .where(appUpdateChannel='beta')
+                  .where(appUpdateChannel='nightly')
                   .where(submissionDate=lambda x: x >= '20170701'))
 
 records = dataset.records(sc)
 
-logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox-beta")
+# logs = records.filter(lambda x: x["meta"]["docType"] == "tls13-middlebox-beta")
 
-json_logs = logs.map(json.dumps)
+json_logs = records.map(json.dumps)
 
 print json_logs.count()
-
 # beta_logs = logs.take(10000000)
 # beta_logs = logs.collect()
 

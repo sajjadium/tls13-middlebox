@@ -507,10 +507,36 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
  
  nsresult
  nsHttpConnectionInfo::CreateWildCard(nsHttpConnectionInfo **outParam)
+@@ -305,16 +309,25 @@ nsHttpConnectionInfo::CreateWildCard(nsH
+                                      mOriginAttributes, true);
+     // Make sure the anonymous and private flags are transferred!
+     clone->SetAnonymous(GetAnonymous());
+     clone->SetPrivate(GetPrivate());
+     clone.forget(outParam);
+     return NS_OK;
+ }
+ 
++void
++nsHttpConnectionInfo::SetTlsFlags(uint32_t aTlsFlags) {
++    mTlsFlags = aTlsFlags;
++
++    char buf[15];
++    snprintf(buf, sizeof(buf), "%08x", mTlsFlags);
++    mHashKey.Replace(18, 8, buf, 8);
++}
++
+ bool
+ nsHttpConnectionInfo::UsingProxy()
+ {
+     if (!mProxyInfo)
+         return false;
+     return !mProxyInfo->IsDirect();
+ }
+ 
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/http/nsHttpConnectionInfo.h
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.h
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.h
-@@ -117,16 +117,26 @@ public:
+@@ -117,16 +117,19 @@ public:
      void          SetNoSpdy(bool aNoSpdy)
                                         { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
      bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
@@ -519,14 +545,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
                                              { mHashKey.SetCharAt(aBeConservative ? 'C' : '.', 6); }
      bool          GetBeConservative() const { return mHashKey.CharAt(6) == 'C'; }
  
-+    void          SetTlsFlags(uint32_t aTlsFlags) {
-+                      mTlsFlags = aTlsFlags;
-+
-+                      char buf[15];
-+                      sprintf(buf, "%08x", mTlsFlags);
-+                      mHashKey.Replace(18, 8, buf, 8);
-+                  }
-+
++    void          SetTlsFlags(uint32_t aTlsFlags);
 +    uint32_t      GetTlsFlags() const { return mTlsFlags; }
 +
      const nsCString &GetNetworkInterfaceId() const { return mNetworkInterfaceId; }
@@ -537,7 +556,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
      const OriginAttributes &GetOriginAttributes() { return mOriginAttributes; }
  
      // Returns true for any kind of proxy (http, socks, https, etc..)
-@@ -171,16 +181,18 @@ private:
+@@ -171,16 +174,18 @@ private:
      nsCOMPtr<nsProxyInfo>  mProxyInfo;
      bool                   mUsingHttpProxy;
      bool                   mUsingHttpsProxy;
@@ -927,6 +946,111 @@ diff --git a/netwerk/socket/nsUDPSocketProvider.cpp b/netwerk/socket/nsUDPSocket
      NS_NOTREACHED("Cannot layer UDP socket on an existing socket");
      return NS_ERROR_UNEXPECTED;
  }
+diff --git a/netwerk/test/unit/test_tls_flags_separate_connections.js b/netwerk/test/unit/test_tls_flags_separate_connections.js
+new file mode 100644
+--- /dev/null
++++ b/netwerk/test/unit/test_tls_flags_separate_connections.js
+@@ -0,0 +1,100 @@
++Cu.import("resource://testing-common/httpd.js");
++Cu.import("resource://gre/modules/NetUtil.jsm");
++Cu.import("resource://gre/modules/XPCOMUtils.jsm");
++
++XPCOMUtils.defineLazyGetter(this, "URL", function() {
++  return "http://localhost:" + httpserv.identity.primaryPort;
++});
++
++// This unit test ensures each container has its own connection pool.
++// We verify this behavior by opening channels with different tlsFlags,
++// and their connection info's hash keys should be different.
++
++// In the first round of this test, we record the hash key in each container.
++// In the second round, we check if each container's hash key is consistent
++// and different from other container's hash key.
++
++let httpserv = null;
++let gSecondRoundStarted = false;
++
++function handler(metadata, response) {
++  response.setHeader("Content-Type", "text/plain", false);
++  response.setHeader("Cache-Control", "no-cache", false);
++  response.setStatusLine(metadata.httpVersion, 200, "OK");
++  let body = "0123456789";
++  response.bodyOutputStream.write(body, body.length);
++}
++
++function makeChan(url, tlsFlags) {
++  let chan = NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
++  chan.QueryInterface(Ci.nsIHttpChannelInternal);
++  chan.tlsFlags = tlsFlags;
++  return chan;
++}
++
++let previousHashKeys = [];
++
++function Listener(tlsFlags) {
++  this.tlsFlags = tlsFlags;
++}
++
++let gTestsRun = 0;
++Listener.prototype = {
++  onStartRequest: function(request, context) {
++    request.QueryInterface(Ci.nsIHttpChannel)
++           .QueryInterface(Ci.nsIHttpChannelInternal);
++
++    do_check_eq(request.tlsFlags, this.tlsFlags);
++
++    let hashKey = request.connectionInfoHashKey;
++    if (gSecondRoundStarted) {
++      // Compare the hash keys with the previous set ones.
++      // Hash keys should match if and only if their tlsFlags are the same.
++      for (let tlsFlags = 0; tlsFlags < 3; tlsFlags++) {
++        if (tlsFlags == this.tlsFlags) {
++          do_check_eq(hashKey, previousHashKeys[tlsFlags]);
++        } else {
++          do_check_neq(hashKey, previousHashKeys[tlsFlags]);
++        }
++      }
++    } else {
++      // Set the hash keys in the first round.
++      previousHashKeys[this.tlsFlags] = hashKey;
++    }
++  },
++  onDataAvailable: function(request, ctx, stream, off, cnt) {
++    read_stream(stream, cnt);
++  },
++  onStopRequest: function() {
++    gTestsRun++;
++    if (gTestsRun == 3) {
++      gTestsRun = 0;
++      if (gSecondRoundStarted) {
++        // The second round finishes.
++        httpserv.stop(do_test_finished);
++      } else {
++        // The first round finishes. Do the second round.
++        gSecondRoundStarted = true;
++        doTest();
++      }
++    }
++  },
++};
++
++function doTest() {
++  for (let tlsFlags = 0; tlsFlags < 3; tlsFlags++) {
++    let chan = makeChan(URL, tlsFlags);
++    let listener = new Listener(tlsFlags);
++    chan.asyncOpen2(listener);
++  }
++}
++
++function run_test() {
++  do_test_pending();
++  httpserv = new HttpServer();
++  httpserv.registerPathHandler("/", handler);
++  httpserv.start(-1);
++
++  doTest();
++}
++
 diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
 --- a/security/manager/ssl/nsNSSIOLayer.cpp
 +++ b/security/manager/ssl/nsNSSIOLayer.cpp
@@ -1050,7 +1174,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    }
 +
 +  char buf[25];
-+  sprintf(buf, "tlsflags0x%08x:", infoObject->GetProviderTlsFlags());
++  snprintf(buf, sizeof(buf), "tlsflags0x%08x:", infoObject->GetProviderTlsFlags());
 +  peerId.Append(buf);
 +
    peerId.Append(host);
