@@ -1,13 +1,14 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1502328642 25200
-#      Wed Aug 09 18:30:42 2017 -0700
-# Node ID 77d27f149583177c9d8a6bea469eac0491d9a772
+# Date 1502397166 25200
+#      Thu Aug 10 13:32:46 2017 -0700
+# Node ID d93f08514b5b5ce105216b4026b9bceb7d36a70c
 # Parent  26a6792f29beed0dad75499f0df6b653dd17240f
 Bug 1388925:
 Added an opaque flags in the http channel interface by which developer has a fine-grained capability to control TLS configurations.
 Basically, all the changes accounted for plumbing this TLS flags from JavaScript level to C++ code responsible for calling NSS module.
 We also added a unit test to make sure that separate connections are created if we use different tlsFlags.
+Basically we generate 10 random flag values and check the hashkey generated in the connection info.
 
 diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
 --- a/netwerk/base/nsISocketTransport.idl
@@ -532,7 +533,16 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
  // and their connection info's hash keys should be different.
  
  // In the first round of this test, we record the hash key in each container.
-@@ -25,16 +25,18 @@ function handler(metadata, response) {
+@@ -17,6 +17,8 @@ XPCOMUtils.defineLazyGetter(this, "URL",
+ let httpserv = null;
+ let gSecondRoundStarted = false;
+ 
++let randomFlagValues = null;
++
+ function handler(metadata, response) {
+   response.setHeader("Content-Type", "text/plain", false);
+   response.setHeader("Cache-Control", "no-cache", false);
+@@ -25,16 +27,18 @@ function handler(metadata, response) {
    response.bodyOutputStream.write(body, body.length);
  }
  
@@ -546,7 +556,8 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
    return chan;
  }
  
- let previousHashKeys = [];
+-let previousHashKeys = [];
++let previousHashKeys = {};
  
 -function Listener(userContextId) {
 -  this.userContextId = userContextId;
@@ -555,7 +566,7 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
  }
  
  let gTestsRun = 0;
-@@ -43,22 +45,22 @@ Listener.prototype = {
+@@ -43,22 +47,22 @@ Listener.prototype = {
      request.QueryInterface(Ci.nsIHttpChannel)
             .QueryInterface(Ci.nsIHttpChannelInternal);
  
@@ -570,7 +581,7 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
 -        if (userContextId == this.userContextId) {
 -          do_check_eq(hashKey, previousHashKeys[userContextId]);
 +      // Hash keys should match if and only if their tlsFlags are the same.
-+      for (let tlsFlags = 0; tlsFlags < 3; tlsFlags++) {
++      for (let tlsFlags of randomFlagValues) {
 +        if (tlsFlags == this.tlsFlags) {
 +          do_check_eq(hashKey, previousHashKeys[tlsFlags]);
          } else {
@@ -585,19 +596,48 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
      }
    },
    onDataAvailable: function(request, ctx, stream, off, cnt) {
-@@ -81,9 +83,9 @@ Listener.prototype = {
+@@ -66,7 +70,7 @@ Listener.prototype = {
+   },
+   onStopRequest: function() {
+     gTestsRun++;
+-    if (gTestsRun == 3) {
++    if (gTestsRun == randomFlagValues.length) {
+       gTestsRun = 0;
+       if (gSecondRoundStarted) {
+         // The second round finishes.
+@@ -81,14 +85,29 @@ Listener.prototype = {
  };
  
  function doTest() {
 -  for (let userContextId = 0; userContextId < 3; userContextId++) {
 -    let chan = makeChan(URL, userContextId);
 -    let listener = new Listener(userContextId);
-+  for (let tlsFlags = 0; tlsFlags < 3; tlsFlags++) {
++  for (let tlsFlags of randomFlagValues) {
 +    let chan = makeChan(URL, tlsFlags);
 +    let listener = new Listener(tlsFlags);
      chan.asyncOpen2(listener);
    }
  }
+ 
+ function run_test() {
++  // generate 10 random flag values
++  randomFlagValues = new Uint32Array(10);
++
++  for (let i = 0; i < randomFlagValues.length; i++) {
++    let flag_value = 0;
++
++    for (let j = 0; j < 32; j++) {
++      if (Math.random() < 0.5) {
++        flag_value |= (1 << j);
++      }
++    }
++
++    randomFlagValues[i] = flag_value;
++  }
++
+   do_test_pending();
+   httpserv = new HttpServer();
+   httpserv.registerPathHandler("/", handler);
 diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
 --- a/netwerk/test/unit/xpcshell.ini
 +++ b/netwerk/test/unit/xpcshell.ini
