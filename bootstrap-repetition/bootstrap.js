@@ -1,5 +1,12 @@
 "use strict";
 
+let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Preferences", "resource://gre/modules/Preferences.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "TelemetryController", "resource://gre/modules/TelemetryController.jsm");
+
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
@@ -16,15 +23,6 @@ const XHR_TIMEOUT = 10000;
 
 const TELEMETRY_PING_NAME = "tls13-middlebox-repetition";
 
-let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/TelemetryController.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-
-let readwrite_prefs = new Preferences({defaultBranch: true});
-
 // all combination of configurations we care about.
 let configurations = [
   {maxVersion: 4, fallbackLimit: 4, website: "https://enabled.tls13.com"},
@@ -33,7 +31,9 @@ let configurations = [
   {maxVersion: 3, fallbackLimit: 3, website: "http://tls12.com"}
 ];
 
-let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+let readwrite_prefs = null;
+let certDB = null;
+let probe_id = null;
 
 // generate random UUID for identifying probes uniquely
 function generateProbeId() {
@@ -41,8 +41,6 @@ function generateProbeId() {
   let uuid = uuidGenerator.generateUUID();
   return uuid.toString();
 }
-
-let PROBE_ID = generateProbeId();
 
 function debug(msg) {
   console.log(msg); // eslint-disable-line no-console
@@ -169,8 +167,6 @@ function makeRequest(config) {
       let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
 
       xhr.open("GET", config.website, true);
-      // xhr.open("GET", "https://scontent.fmel1-1.fna.fbcdn.net/", true);
-      // xhr.open("GET", "https://www.tls13.facebook.com", true);
 
       xhr.timeout = XHR_TIMEOUT;
 
@@ -182,12 +178,6 @@ function makeRequest(config) {
       xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_PERSISTENT_CACHING;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
       xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_INITIAL_DOCUMENT_URI;
-
-      // if (Math.random() < 0.5) {
-        let internalChannel = xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
-        internalChannel.tlsFlags = 0x100;
-        internalChannel.beConservative = true;
-      // }
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
@@ -253,7 +243,7 @@ async function runConfigurations() {
 
 function sendToTelemetry(status, data) {
   TelemetryController.submitExternalPing(TELEMETRY_PING_NAME, Object.assign({
-    "id": PROBE_ID,
+    "id": probe_id,
     "status": status
   }, data));
 }
@@ -298,14 +288,19 @@ function shutdown() {
 }
 
 function install() {
+  // initialize the global variables
+  readwrite_prefs = new Preferences({defaultBranch: true});
+  certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+  probe_id = generateProbeId();
+
   // send start of the test probe
   try {
     sendToTelemetry("started", {});
 
     // abort if either of VERSION_MAX_PREF or FALLBACK_LIMIT_PREF was set by the user
-    // if (hasUserSetPreference()) {
-    //   return;
-    // }
+    if (hasUserSetPreference()) {
+      return;
+    }
 
     // record the default values before the experiment starts
     let defaultMaxVersion = readwrite_prefs.get(VERSION_MAX_PREF);
