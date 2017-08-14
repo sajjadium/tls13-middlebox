@@ -7,6 +7,9 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Preferences", "resource://gre/modules/Preferences.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "TelemetryController", "resource://gre/modules/TelemetryController.jsm");
 
+XPCOMUtils.defineLazyServiceGetter(this, "certDB", "@mozilla.org/security/x509certdb;1", "nsIX509CertDB");
+XPCOMUtils.defineLazyServiceGetter(this, "uuidGenerator", "@mozilla.org/uuid-generator;1", "nsIUUIDGenerator");
+
 const VERSION_MAX_PREF = "security.tls.version.max";
 const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
@@ -32,15 +35,7 @@ let configurations = [
 ];
 
 let readwrite_prefs = null;
-let certDB = null;
 let probe_id = null;
-
-// generate random UUID for identifying probes uniquely
-function generateProbeId() {
-  let uuidGenerator = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
-  let uuid = uuidGenerator.generateUUID();
-  return uuid.toString();
-}
 
 function debug(msg) {
   console.log(msg); // eslint-disable-line no-console
@@ -288,10 +283,11 @@ function shutdown() {
 }
 
 function install() {
-  // initialize the global variables
+  // creating a non-permanent preferences object
   readwrite_prefs = new Preferences({defaultBranch: true});
-  certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
-  probe_id = generateProbeId();
+
+  // generate random UUID for identifying probes uniquely
+  probe_id = uuidGenerator.generateUUID().toString();
 
   // send start of the test probe
   try {
