@@ -1,7 +1,7 @@
 diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
 --- a/netwerk/base/nsISocketTransport.idl
 +++ b/netwerk/base/nsISocketTransport.idl
-@@ -233,16 +233,22 @@ interface nsISocketTransport : nsITransp
+@@ -233,16 +233,23 @@ interface nsISocketTransport : nsITransp
      /**
       * If set, do not use newer protocol features that might have interop problems
       * on the Internet. Intended only for use with critical infra like the updater.
@@ -10,8 +10,9 @@ diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTranspo
      const unsigned long BE_CONSERVATIVE = (1 << 7);
  
      /**
-+     * opaque flags for non-standard behavior of the TLS system
-+     * do not set these unless you are a TLS developer.
++     * An opaque flags for non-standard behavior of the TLS system.
++     * It is unlikely this will need to be set outside of telemetry studies
++     * relating to the TLS implementation.
 +     */
 +    attribute unsigned long tlsFlags;
 +
@@ -247,7 +248,7 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/Htt
    NS_IMETHOD GetInitialRwin(uint32_t* aRwin) override;
    NS_IMETHOD SetInitialRwin(uint32_t aRwin) override;
    NS_IMETHOD GetNetworkInterfaceId(nsACString& aNetworkInterfaceId) override;
-@@ -536,16 +538,20 @@ protected:
+@@ -536,16 +538,21 @@ protected:
    uint32_t                          mResponseCouldBeSynthesized : 1;
  
    uint32_t                          mBlockAuthPrompt : 1;
@@ -256,8 +257,9 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/Htt
    // Used to enforce that flag's behavior but not expose it externally.
    uint32_t                          mAllowStaleCacheContent : 1;
  
-+  // opaque flags for non-standard behavior of the TLS system
-+  // do not set these unless you are a TLS developer.
++  // An opaque flags for non-standard behavior of the TLS system.
++  // It is unlikely this will need to be set outside of telemetry studies
++  // relating to the TLS implementation.
 +  uint32_t                          mTlsFlags;
 +
    // Current suspension depth for this channel object
@@ -521,7 +523,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
 +    mTlsFlags = aTlsFlags;
 +
 +    char buf[15];
-+    snprintf(buf, sizeof(buf), "%08x", mTlsFlags);
++    SprintfLiteral(buf, "%08x", mTlsFlags);
 +    mHashKey.Replace(18, 8, buf, 8);
 +}
 +
@@ -599,7 +601,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/ht
 diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol/http/nsIHttpChannelInternal.idl
 --- a/netwerk/protocol/http/nsIHttpChannelInternal.idl
 +++ b/netwerk/protocol/http/nsIHttpChannelInternal.idl
-@@ -211,16 +211,22 @@ interface nsIHttpChannelInternal : nsISu
+@@ -211,16 +211,23 @@ interface nsIHttpChannelInternal : nsISu
  
      /**
       * If true, do not use newer protocol features that might have interop problems
@@ -609,8 +611,9 @@ diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol
      [must_use] attribute boolean beConservative;
  
 +    /**
-+     * opaque flags for non-standard behavior of the TLS system
-+     * do not set these unless you are a TLS developer.
++     * An opaque flags for non-standard behavior of the TLS system.
++     * It is unlikely this will need to be set outside of telemetry studies
++     * relating to the TLS implementation.
 +     */
 +    [must_use] attribute unsigned long tlsFlags;
 +
@@ -650,7 +653,7 @@ diff --git a/netwerk/socket/nsISSLSocketControl.idl b/netwerk/socket/nsISSLSocke
 diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
 --- a/netwerk/socket/nsISocketProvider.idl
 +++ b/netwerk/socket/nsISocketProvider.idl
-@@ -30,29 +30,33 @@ interface nsISocketProvider : nsISupport
+@@ -30,29 +30,34 @@ interface nsISocketProvider : nsISupport
       * @param aPort
       *        The origin port for this connection.
       * @param aProxyHost
@@ -660,8 +663,9 @@ diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProv
       * @param aFlags
       *        Control flags that govern this connection (see below.)
 +     * @param aTlsFlags
-+     *        opaque flags for non-standard behavior of the TLS system
-+     *        do not set these unless you are a TLS developer.
++     *        An opaque flags for non-standard behavior of the TLS system.
++     *        It is unlikely this will need to be set outside of telemetry
++     *        studies relating to the TLS implementation.
       * @param aFileDesc
       *        The resulting PRFileDesc.
       * @param aSecurityInfo
@@ -684,7 +688,7 @@ diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProv
       *
       * This function is called to allow the socket provider to layer a
       * PRFileDesc on top of another PRFileDesc.  For example, SSL via a SOCKS
-@@ -63,16 +67,17 @@ interface nsISocketProvider : nsISupport
+@@ -63,16 +68,17 @@ interface nsISocketProvider : nsISupport
       */
      [noscript]
      void addToSocket(in long                      aFamily,
@@ -951,7 +955,8 @@ copy from netwerk/test/unit/test_separate_connections.js
 copy to netwerk/test/unit/test_tls_flags_separate_connections.js
 --- a/netwerk/test/unit/test_separate_connections.js
 +++ b/netwerk/test/unit/test_tls_flags_separate_connections.js
-@@ -2,98 +2,117 @@ Cu.import("resource://testing-common/htt
+@@ -1,94 +1,114 @@
+ Cu.import("resource://testing-common/httpd.js");
  Cu.import("resource://gre/modules/NetUtil.jsm");
  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
  
@@ -959,19 +964,40 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
    return "http://localhost:" + httpserv.identity.primaryPort;
  });
  
- // This unit test ensures each container has its own connection pool.
+-// This unit test ensures each container has its own connection pool.
 -// We verify this behavior by opening channels with different userContextId,
-+// We verify this behavior by opening channels with different tlsFlags,
- // and their connection info's hash keys should be different.
+-// and their connection info's hash keys should be different.
++// This unit test ensures connections with different tlsFlags have their own
++// connection pool. We verify this behavior by opening channels with different
++// tlsFlags, and their connection info's hash keys should be different.
  
- // In the first round of this test, we record the hash key in each container.
- // In the second round, we check if each container's hash key is consistent
- // and different from other container's hash key.
+-// In the first round of this test, we record the hash key in each container.
+-// In the second round, we check if each container's hash key is consistent
+-// and different from other container's hash key.
++// In the first round of this test, we record the hash key for each connection.
++// In the second round, we check if each connection's hash key is consistent
++// and different from other connection's hash key.
  
  let httpserv = null;
  let gSecondRoundStarted = false;
  
-+let randomFlagValues = null;
++let randomFlagValues = [
++    0x00000000,
++
++    0xFFFFFFFF,
++
++    0x12345678,
++    0x12345678,
++
++    0x11111111,
++    0x22222222,
++
++    0xAAAAAAAA,
++    0x77777777,
++
++    0xBBBBBBBB,
++    0xCCCCCCCC
++];
 +
  function handler(metadata, response) {
    response.setHeader("Content-Type", "text/plain", false);
@@ -1063,29 +1089,9 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
  }
  
  function run_test() {
-+  // generate 10 random flag values
-+  randomFlagValues = new Uint32Array(10);
-+
-+  for (let i = 0; i < randomFlagValues.length; i++) {
-+    let flag_value = 0;
-+
-+    for (let j = 0; j < 32; j++) {
-+      if (Math.random() < 0.5) {
-+        flag_value |= (1 << j);
-+      }
-+    }
-+
-+    randomFlagValues[i] = flag_value;
-+  }
-+
    do_test_pending();
    httpserv = new HttpServer();
    httpserv.registerPathHandler("/", handler);
-   httpserv.start(-1);
- 
-   doTest();
- }
- 
 diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
 --- a/netwerk/test/unit/xpcshell.ini
 +++ b/netwerk/test/unit/xpcshell.ini
@@ -1102,7 +1108,7 @@ diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
 diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
 --- a/security/manager/ssl/nsNSSIOLayer.cpp
 +++ b/security/manager/ssl/nsNSSIOLayer.cpp
-@@ -70,17 +70,17 @@ getSiteKey(const nsACString& hostName, u
+@@ -70,17 +70,18 @@ getSiteKey(const nsACString& hostName, u
    key.AppendASCII(":");
    key.AppendInt(port);
  }
@@ -1112,7 +1118,8 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  extern LazyLogModule gPIPNSSLog;
  
 -nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags)
-+nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags, uint32_t providerTlsFlags)
++nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
++uint32_t providerTlsFlags)
    : mFd(nullptr),
      mCertVerificationState(before_cert_verification),
      mSharedState(aState),
@@ -1121,7 +1128,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      mRememberClientAuthCertificate(false),
      mPreliminaryHandshakeDone(false),
      mNPNCompleted(false),
-@@ -94,16 +94,17 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedS
+@@ -94,16 +95,17 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedS
      mNotedTimeUntilReady(false),
      mFailedVerification(false),
      mKEAUsed(nsISSLSocketControl::KEY_EXCHANGE_UNKNOWN),
@@ -1139,7 +1146,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    mTLSVersionRange.max = 0;
  }
  
-@@ -118,16 +119,23 @@ NS_IMPL_ISUPPORTS_INHERITED(nsNSSSocketI
+@@ -118,16 +120,23 @@ NS_IMPL_ISUPPORTS_INHERITED(nsNSSSocketI
  NS_IMETHODIMP
  nsNSSSocketInfo::GetProviderFlags(uint32_t* aProviderFlags)
  {
@@ -1163,7 +1170,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  
  NS_IMETHODIMP
  nsNSSSocketInfo::GetKEAKeyBits(uint32_t* aKeyBits)
-@@ -1808,25 +1816,26 @@ nsresult
+@@ -1808,25 +1817,26 @@ nsresult
  nsSSLIOLayerNewSocket(int32_t family,
                        const char* host,
                        int32_t port,
@@ -1192,7 +1199,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    *fd = sock;
    return NS_OK;
  }
-@@ -2420,16 +2429,18 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+@@ -2420,16 +2430,18 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      }
    }
  
@@ -1211,7 +1218,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      range.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
  
-@@ -2517,16 +2528,19 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+@@ -2517,16 +2529,19 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      peerId.AppendLiteral("private:");
    }
    if (flags & nsISocketProvider::MITM_OK) {
@@ -1231,7 +1238,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    peerId.Append(suffix);
    if (SECSuccess != SSL_SetSockPeerID(fd, peerId.get())) {
      return NS_ERROR_FAILURE;
-@@ -2539,27 +2553,28 @@ nsresult
+@@ -2539,27 +2554,28 @@ nsresult
  nsSSLIOLayerAddToSocket(int32_t family,
                          const char* host,
                          int32_t port,
@@ -1265,7 +1272,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
 diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOLayer.h
 --- a/security/manager/ssl/nsNSSIOLayer.h
 +++ b/security/manager/ssl/nsNSSIOLayer.h
-@@ -30,17 +30,17 @@ using mozilla::OriginAttributes;
+@@ -30,17 +30,18 @@ using mozilla::OriginAttributes;
  
  class nsIObserver;
  
@@ -1275,7 +1282,8 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  {
  public:
 -  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags);
-+  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags, uint32_t providerTlsFlags);
++  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags,
++  uint32_t providerTlsFlags);
  
    NS_DECL_ISUPPORTS_INHERITED
    NS_DECL_NSISSLSOCKETCONTROL
@@ -1284,7 +1292,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
    void SetForSTARTTLS(bool aForSTARTTLS);
    bool GetForSTARTTLS();
  
-@@ -70,16 +70,17 @@ public:
+@@ -70,16 +71,17 @@ public:
    // it gets reset back to false.
    void SetFullHandshake() { mIsFullHandshake = true; }
    bool IsFullHandshake() const { return mIsFullHandshake; }
@@ -1302,7 +1310,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
      before_cert_verification,
      waiting_for_cert_verification,
      after_cert_verification
-@@ -151,16 +152,17 @@ private:
+@@ -151,16 +153,17 @@ private:
    // Values are from nsISSLSocketControl
    int16_t mKEAUsed;
    uint32_t mKEAKeyBits;
@@ -1320,7 +1328,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  
  class nsSSLIOLayerHelpers
  {
-@@ -228,24 +230,26 @@ private:
+@@ -228,24 +231,26 @@ private:
  nsresult nsSSLIOLayerNewSocket(int32_t family,
                                 const char* host,
                                 int32_t port,
