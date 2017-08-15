@@ -1,24 +1,32 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1502397166 25200
-#      Thu Aug 10 13:32:46 2017 -0700
-# Node ID d93f08514b5b5ce105216b4026b9bceb7d36a70c
-# Parent  26a6792f29beed0dad75499f0df6b653dd17240f
-Bug 1388925:
-Added an opaque flags in the http channel interface by which developer has a fine-grained capability to control TLS configurations.
-Basically, all the changes accounted for plumbing this TLS flags from JavaScript level to C++ code responsible for calling NSS module.
-We also added a unit test to make sure that separate connections are created if we use different tlsFlags.
-Basically we used a concrete set of values that covers the edge cases and check the hashkey generated in the connection info.
+# Date 1502839465 25200
+#      Tue Aug 15 16:24:25 2017 -0700
+# Node ID 5c137e3f0f8d35fe5370ce3fd4e64200aee96c74
+# Parent  ec83c820877e9a937e6bb2cd8af7729cf06c535d
+Bug 1388925: Adding an opaque flags to have a fine-grained control over TLS configurations. r=mcmanus r=keeler
+This flags is added in the http channel interface by which developers can control the TLS
+connections from JavaScript code (e.g. Add-ons). Basically, all the changes accounted for
+plumbing this TLS flags from JavaScript level to C++ code responsible for calling NSS
+module. We also added a unit test to make sure that separate connections are created if we
+use different tlsFlags. Basically we used a concrete set of flag values that covers the
+edge cases and check the hashkey generated in the connection info.
 
 diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
 --- a/netwerk/base/nsISocketTransport.idl
 +++ b/netwerk/base/nsISocketTransport.idl
-@@ -238,6 +238,12 @@ interface nsISocketTransport : nsITransp
+@@ -233,16 +233,23 @@ interface nsISocketTransport : nsITransp
+     /**
+      * If set, do not use newer protocol features that might have interop problems
+      * on the Internet. Intended only for use with critical infra like the updater.
+      * default is false.
+      */
      const unsigned long BE_CONSERVATIVE = (1 << 7);
  
      /**
-+     * opaque flags for non-standard behavior of the TLS system
-+     * do not set these unless you are a TLS developer.
++     * An opaque flags for non-standard behavior of the TLS system.
++     * It is unlikely this will need to be set outside of telemetry studies
++     * relating to the TLS implementation.
 +     */
 +    attribute unsigned long tlsFlags;
 +
@@ -26,10 +34,20 @@ diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTranspo
       * Socket QoS/ToS markings. Valid values are IPTOS_DSCP_AFxx or
       * IPTOS_CLASS_CSx (or IPTOS_DSCP_EF, but currently no supported
       * services require expedited-forwarding).
+      * Not setting this value will leave the socket with the default
+      * ToS value, which on most systems if IPTOS_CLASS_CS0 (formerly
+      * IPTOS_PREC_ROUTINE).
+      */
+     attribute octet QoSBits;
 diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTransport2.cpp
 --- a/netwerk/base/nsSocketTransport2.cpp
 +++ b/netwerk/base/nsSocketTransport2.cpp
-@@ -775,6 +775,7 @@ nsSocketTransport::nsSocketTransport()
+@@ -770,16 +770,17 @@ nsSocketTransport::nsSocketTransport()
+     , mTypeCount(0)
+     , mPort(0)
+     , mProxyPort(0)
+     , mOriginPort(0)
+     , mProxyTransparent(false)
      , mProxyTransparentResolvesHost(false)
      , mHttpsProxy(false)
      , mConnectionFlags(0)
@@ -37,7 +55,17 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
      , mReuseAddrPort(false)
      , mState(STATE_CLOSED)
      , mAttached(false)
-@@ -1225,7 +1226,7 @@ nsSocketTransport::BuildSocket(PRFileDes
+     , mInputClosed(true)
+     , mOutputClosed(true)
+     , mResolving(false)
+     , mNetAddrIsSet(false)
+     , mSelfAddrIsSet(false)
+@@ -1220,31 +1221,31 @@ nsSocketTransport::BuildSocket(PRFileDes
+ 
+                 // when https proxying we want to just connect to the proxy as if
+                 // it were the end host (i.e. expect the proxy's cert)
+ 
+                 rv = provider->NewSocket(mNetAddr.raw.family,
                                           mHttpsProxy ? mProxyHost.get() : host,
                                           mHttpsProxy ? mProxyPort : port,
                                           proxyInfo, mOriginAttributes,
@@ -46,7 +74,13 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
                                           getter_AddRefs(secinfo));
  
                  if (NS_SUCCEEDED(rv) && !fd) {
-@@ -1239,7 +1240,7 @@ nsSocketTransport::BuildSocket(PRFileDes
+                     NS_NOTREACHED("NewSocket succeeded but failed to create a PRFileDesc");
+                     rv = NS_ERROR_UNEXPECTED;
+                 }
+             }
+             else {
+                 // the socket has already been allocated,
+                 // so we just want the service to add itself
                  // to the stack (such as pushing an io layer)
                  rv = provider->AddToSocket(mNetAddr.raw.family,
                                             host, port, proxyInfo,
@@ -55,7 +89,17 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
                                             getter_AddRefs(secinfo));
              }
  
-@@ -2985,6 +2986,20 @@ nsSocketTransport::SetConnectionFlags(ui
+             // controlFlags = 0; not used below this point...
+             if (NS_FAILED(rv))
+                 break;
+ 
+             // if the service was ssl or starttls, we want to hold onto the socket info
+@@ -2991,16 +2992,30 @@ nsSocketTransport::GetConnectionFlags(ui
+ NS_IMETHODIMP
+ nsSocketTransport::SetConnectionFlags(uint32_t value)
+ {
+     mConnectionFlags = value;
+     mIsPrivate = value & nsISocketTransport::NO_PERMANENT_STORAGE;
      return NS_OK;
  }
  
@@ -76,10 +120,20 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
  void
  nsSocketTransport::OnKeepaliveEnabledPrefChange(bool aEnabled)
  {
+     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+ 
+     // The global pref toggles keepalive as a system feature; it only affects
+     // an individual socket if keepalive has been specifically enabled for it.
+     // So, ensure keepalive is configured correctly if previously enabled.
 diff --git a/netwerk/base/nsSocketTransport2.h b/netwerk/base/nsSocketTransport2.h
 --- a/netwerk/base/nsSocketTransport2.h
 +++ b/netwerk/base/nsSocketTransport2.h
-@@ -308,6 +308,7 @@ private:
+@@ -303,16 +303,17 @@ private:
+     uint16_t     mPort;
+     nsCOMPtr<nsIProxyInfo> mProxyInfo;
+     uint16_t     mProxyPort;
+     uint16_t     mOriginPort;
+     bool mProxyTransparent;
      bool mProxyTransparentResolvesHost;
      bool mHttpsProxy;
      uint32_t     mConnectionFlags;
@@ -87,10 +141,20 @@ diff --git a/netwerk/base/nsSocketTransport2.h b/netwerk/base/nsSocketTransport2
      bool mReuseAddrPort;
  
      // The origin attributes are used to create sockets.  The first party domain
+     // will eventually be used to isolate OCSP cache and is only non-empty when
+     // "privacy.firstparty.isolate" is enabled.  Setting this is the only way to
+     // carry origin attributes down to NSPR layers which are final consumers.
+     // It must be set before the socket transport is built.
+     OriginAttributes mOriginAttributes;
 diff --git a/netwerk/ipc/NeckoChannelParams.ipdlh b/netwerk/ipc/NeckoChannelParams.ipdlh
 --- a/netwerk/ipc/NeckoChannelParams.ipdlh
 +++ b/netwerk/ipc/NeckoChannelParams.ipdlh
-@@ -128,6 +128,7 @@ struct HttpChannelOpenArgs
+@@ -123,16 +123,17 @@ struct HttpChannelOpenArgs
+   bool                        resumeAt;
+   uint64_t                    startPos;
+   nsCString                   entityID;
+   bool                        chooseApplicationCache;
+   nsCString                   appCacheClientID;
    bool                        allowSpdy;
    bool                        allowAltSvc;
    bool                        beConservative;
@@ -98,10 +162,20 @@ diff --git a/netwerk/ipc/NeckoChannelParams.ipdlh b/netwerk/ipc/NeckoChannelPara
    OptionalLoadInfoArgs        loadInfo;
    OptionalHttpResponseHead    synthesizedResponseHead;
    nsCString                   synthesizedSecurityInfoSerialization;
+   uint32_t                    cacheKey;
+   uint64_t                    requestContextID;
+   OptionalCorsPreflightArgs   preflightArgs;
+   uint32_t                    initialRwin;
+   bool                        blockAuthPrompt;
 diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
 --- a/netwerk/protocol/http/HttpBaseChannel.cpp
 +++ b/netwerk/protocol/http/HttpBaseChannel.cpp
-@@ -183,6 +183,7 @@ HttpBaseChannel::HttpBaseChannel()
+@@ -178,16 +178,17 @@ HttpBaseChannel::HttpBaseChannel()
+   , mAllowAltSvc(true)
+   , mBeConservative(false)
+   , mResponseTimeoutEnabled(true)
+   , mAllRedirectsSameOrigin(true)
+   , mAllRedirectsPassTimingAllowCheck(true)
    , mResponseCouldBeSynthesized(false)
    , mBlockAuthPrompt(false)
    , mAllowStaleCacheContent(false)
@@ -109,7 +183,17 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/H
    , mSuspendCount(0)
    , mInitialRwin(0)
    , mProxyResolveFlags(0)
-@@ -2614,6 +2615,22 @@ HttpBaseChannel::SetBeConservative(bool 
+   , mContentDispositionHint(UINT32_MAX)
+   , mHttpHandler(gHttpHandler)
+   , mReferrerPolicy(NS_GetDefaultReferrerPolicy())
+   , mRedirectCount(0)
+   , mForcePending(false)
+@@ -2609,16 +2610,32 @@ HttpBaseChannel::GetBeConservative(bool 
+ NS_IMETHODIMP
+ HttpBaseChannel::SetBeConservative(bool aBeConservative)
+ {
+   mBeConservative = aBeConservative;
+   return NS_OK;
  }
  
  NS_IMETHODIMP
@@ -132,7 +216,17 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/H
  HttpBaseChannel::GetApiRedirectToURI(nsIURI ** aResult)
  {
    NS_ENSURE_ARG_POINTER(aResult);
-@@ -3420,6 +3437,8 @@ HttpBaseChannel::SetupReplacementChannel
+   NS_IF_ADDREF(*aResult = mAPIRedirectToURI);
+   return NS_OK;
+ }
+ 
+ NS_IMETHODIMP
+@@ -3415,16 +3432,18 @@ HttpBaseChannel::SetupReplacementChannel
+     rv = httpInternal->SetThirdPartyFlags(mThirdPartyFlags);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
+     rv = httpInternal->SetAllowSpdy(mAllowSpdy);
+     MOZ_ASSERT(NS_SUCCEEDED(rv));
+     rv = httpInternal->SetAllowAltSvc(mAllowAltSvc);
      MOZ_ASSERT(NS_SUCCEEDED(rv));
      rv = httpInternal->SetBeConservative(mBeConservative);
      MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -141,10 +235,20 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/H
  
      RefPtr<nsHttpChannel> realChannel;
      CallQueryInterface(newChannel, realChannel.StartAssignment());
+     if (realChannel) {
+       rv = realChannel->SetTopWindowURI(mTopWindowURI);
+       MOZ_ASSERT(NS_SUCCEEDED(rv));
+     }
+ 
 diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/HttpBaseChannel.h
 --- a/netwerk/protocol/http/HttpBaseChannel.h
 +++ b/netwerk/protocol/http/HttpBaseChannel.h
-@@ -235,6 +235,8 @@ public:
+@@ -230,16 +230,18 @@ public:
+   NS_IMETHOD GetRemoteAddress(nsACString& addr) override;
+   NS_IMETHOD GetRemotePort(int32_t* port) override;
+   NS_IMETHOD GetAllowSpdy(bool *aAllowSpdy) override;
+   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy) override;
+   NS_IMETHOD GetAllowAltSvc(bool *aAllowAltSvc) override;
    NS_IMETHOD SetAllowAltSvc(bool aAllowAltSvc) override;
    NS_IMETHOD GetBeConservative(bool *aBeConservative) override;
    NS_IMETHOD SetBeConservative(bool aBeConservative) override;
@@ -153,21 +257,42 @@ diff --git a/netwerk/protocol/http/HttpBaseChannel.h b/netwerk/protocol/http/Htt
    NS_IMETHOD GetApiRedirectToURI(nsIURI * *aApiRedirectToURI) override;
    virtual MOZ_MUST_USE nsresult AddSecurityMessage(const nsAString &aMessageTag, const nsAString &aMessageCategory);
    NS_IMETHOD TakeAllSecurityMessages(nsCOMArray<nsISecurityConsoleMessage> &aMessages) override;
-@@ -541,6 +543,10 @@ protected:
+   NS_IMETHOD GetResponseTimeoutEnabled(bool *aEnable) override;
+   NS_IMETHOD SetResponseTimeoutEnabled(bool aEnable) override;
+   NS_IMETHOD GetInitialRwin(uint32_t* aRwin) override;
+   NS_IMETHOD SetInitialRwin(uint32_t aRwin) override;
+   NS_IMETHOD GetNetworkInterfaceId(nsACString& aNetworkInterfaceId) override;
+@@ -536,16 +538,21 @@ protected:
+   uint32_t                          mResponseCouldBeSynthesized : 1;
+ 
+   uint32_t                          mBlockAuthPrompt : 1;
+ 
+   // If true, we behave as if the LOAD_FROM_CACHE flag has been set.
    // Used to enforce that flag's behavior but not expose it externally.
    uint32_t                          mAllowStaleCacheContent : 1;
  
-+  // opaque flags for non-standard behavior of the TLS system
-+  // do not set these unless you are a TLS developer.
++  // An opaque flags for non-standard behavior of the TLS system.
++  // It is unlikely this will need to be set outside of telemetry studies
++  // relating to the TLS implementation.
 +  uint32_t                          mTlsFlags;
 +
    // Current suspension depth for this channel object
    uint32_t                          mSuspendCount;
  
+   // Per channel transport window override (0 means no override)
+   uint32_t                          mInitialRwin;
+ 
+   nsAutoPtr<nsTArray<nsCString> >   mRedirectedCachekeys;
+ 
 diff --git a/netwerk/protocol/http/HttpChannelChild.cpp b/netwerk/protocol/http/HttpChannelChild.cpp
 --- a/netwerk/protocol/http/HttpChannelChild.cpp
 +++ b/netwerk/protocol/http/HttpChannelChild.cpp
-@@ -2563,6 +2563,7 @@ HttpChannelChild::ContinueAsyncOpen()
+@@ -2558,16 +2558,17 @@ HttpChannelChild::ContinueAsyncOpen()
+   openArgs.resumeAt() = mSendResumeAt;
+   openArgs.startPos() = mStartPos;
+   openArgs.entityID() = mEntityID;
+   openArgs.chooseApplicationCache() = mChooseApplicationCache;
+   openArgs.appCacheClientID() = appCacheClientId;
    openArgs.allowSpdy() = mAllowSpdy;
    openArgs.allowAltSvc() = mAllowAltSvc;
    openArgs.beConservative() = mBeConservative;
@@ -175,10 +300,20 @@ diff --git a/netwerk/protocol/http/HttpChannelChild.cpp b/netwerk/protocol/http/
    openArgs.initialRwin() = mInitialRwin;
  
    uint32_t cacheKey = 0;
+   if (mCacheKey) {
+     nsCOMPtr<nsISupportsPRUint32> container = do_QueryInterface(mCacheKey);
+     if (!container) {
+       return NS_ERROR_ILLEGAL_VALUE;
+     }
 diff --git a/netwerk/protocol/http/HttpChannelParent.cpp b/netwerk/protocol/http/HttpChannelParent.cpp
 --- a/netwerk/protocol/http/HttpChannelParent.cpp
 +++ b/netwerk/protocol/http/HttpChannelParent.cpp
-@@ -136,7 +136,7 @@ HttpChannelParent::Init(const HttpChanne
+@@ -131,17 +131,17 @@ HttpChannelParent::Init(const HttpChanne
+                        a.referrerPolicy(), a.apiRedirectTo(), a.topWindowURI(),
+                        a.loadFlags(), a.requestHeaders(),
+                        a.requestMethod(), a.uploadStream(),
+                        a.uploadStreamHasHeaders(), a.priority(), a.classOfService(),
+                        a.redirectionLimit(), a.allowSTS(),
                         a.thirdPartyFlags(), a.resumeAt(), a.startPos(),
                         a.entityID(), a.chooseApplicationCache(),
                         a.appCacheClientID(), a.allowSpdy(), a.allowAltSvc(), a.beConservative(),
@@ -187,7 +322,17 @@ diff --git a/netwerk/protocol/http/HttpChannelParent.cpp b/netwerk/protocol/http
                         a.synthesizedSecurityInfoSerialization(),
                         a.cacheKey(), a.requestContextID(), a.preflightArgs(),
                         a.initialRwin(), a.blockAuthPrompt(),
-@@ -457,6 +457,7 @@ HttpChannelParent::DoAsyncOpen(  const U
+                        a.suspendAfterSynthesizeResponse(),
+                        a.allowStaleCacheContent(), a.contentTypeHint(),
+                        a.channelId(), a.contentWindowId(), a.preferredAlternativeType(),
+                        a.topLevelOuterContentWindowId(),
+                        a.launchServiceWorkerStart(),
+@@ -452,16 +452,17 @@ HttpChannelParent::DoAsyncOpen(  const U
+                                  const bool&                doResumeAt,
+                                  const uint64_t&            startPos,
+                                  const nsCString&           entityID,
+                                  const bool&                chooseApplicationCache,
+                                  const nsCString&           appCacheClientID,
                                   const bool&                allowSpdy,
                                   const bool&                allowAltSvc,
                                   const bool&                beConservative,
@@ -195,7 +340,17 @@ diff --git a/netwerk/protocol/http/HttpChannelParent.cpp b/netwerk/protocol/http
                                   const OptionalLoadInfoArgs& aLoadInfoArgs,
                                   const OptionalHttpResponseHead& aSynthesizedResponseHead,
                                   const nsCString&           aSecurityInfoSerialization,
-@@ -683,6 +684,7 @@ HttpChannelParent::DoAsyncOpen(  const U
+                                  const uint32_t&            aCacheKey,
+                                  const uint64_t&            aRequestContextID,
+                                  const OptionalCorsPreflightArgs& aCorsPreflightArgs,
+                                  const uint32_t&            aInitialRwin,
+                                  const bool&                aBlockAuthPrompt,
+@@ -678,16 +679,17 @@ HttpChannelParent::DoAsyncOpen(  const U
+     httpChannel->SetClassFlags(classOfService);
+   }
+   httpChannel->SetRedirectionLimit(redirectionLimit);
+   httpChannel->SetAllowSTS(allowSTS);
+   httpChannel->SetThirdPartyFlags(thirdPartyFlags);
    httpChannel->SetAllowSpdy(allowSpdy);
    httpChannel->SetAllowAltSvc(allowAltSvc);
    httpChannel->SetBeConservative(beConservative);
@@ -203,10 +358,20 @@ diff --git a/netwerk/protocol/http/HttpChannelParent.cpp b/netwerk/protocol/http
    httpChannel->SetInitialRwin(aInitialRwin);
    httpChannel->SetBlockAuthPrompt(aBlockAuthPrompt);
  
+   httpChannel->SetLaunchServiceWorkerStart(aLaunchServiceWorkerStart);
+   httpChannel->SetLaunchServiceWorkerEnd(aLaunchServiceWorkerEnd);
+   httpChannel->SetDispatchFetchEventStart(aDispatchFetchEventStart);
+   httpChannel->SetDispatchFetchEventEnd(aDispatchFetchEventEnd);
+   httpChannel->SetHandleFetchEventStart(aHandleFetchEventStart);
 diff --git a/netwerk/protocol/http/HttpChannelParent.h b/netwerk/protocol/http/HttpChannelParent.h
 --- a/netwerk/protocol/http/HttpChannelParent.h
 +++ b/netwerk/protocol/http/HttpChannelParent.h
-@@ -151,6 +151,7 @@ protected:
+@@ -146,16 +146,17 @@ protected:
+               const bool&                doResumeAt,
+               const uint64_t&            startPos,
+               const nsCString&           entityID,
+               const bool&                chooseApplicationCache,
+               const nsCString&           appCacheClientID,
                const bool&                allowSpdy,
                const bool&                allowAltSvc,
                const bool&                beConservative,
@@ -214,10 +379,20 @@ diff --git a/netwerk/protocol/http/HttpChannelParent.h b/netwerk/protocol/http/H
                const OptionalLoadInfoArgs& aLoadInfoArgs,
                const OptionalHttpResponseHead& aSynthesizedResponseHead,
                const nsCString&           aSecurityInfoSerialization,
+               const uint32_t&            aCacheKey,
+               const uint64_t&            aRequestContextID,
+               const OptionalCorsPreflightArgs& aCorsPreflightArgs,
+               const uint32_t&            aInitialRwin,
+               const bool&                aBlockAuthPrompt,
 diff --git a/netwerk/protocol/http/TunnelUtils.cpp b/netwerk/protocol/http/TunnelUtils.cpp
 --- a/netwerk/protocol/http/TunnelUtils.cpp
 +++ b/netwerk/protocol/http/TunnelUtils.cpp
-@@ -80,7 +80,7 @@ TLSFilterTransaction::TLSFilterTransacti
+@@ -75,17 +75,17 @@ TLSFilterTransaction::TLSFilterTransacti
+     sLayerMethodsPtr = &sLayerMethods;
+   }
+ 
+   mFD = PR_CreateIOLayerStub(sLayerIdentity, &sLayerMethods);
+ 
    if (provider && mFD) {
      mFD->secret = reinterpret_cast<PRFilePrivate *>(this);
      provider->AddToSocket(PR_AF_INET, aTLSHost, aTLSPort, nullptr,
@@ -226,7 +401,17 @@ diff --git a/netwerk/protocol/http/TunnelUtils.cpp b/netwerk/protocol/http/Tunne
                            getter_AddRefs(mSecInfo));
    }
  
-@@ -1547,6 +1547,8 @@ FWD_TS_ADDREF(GetSecurityCallbacks, nsII
+   if (mTransaction) {
+     nsCOMPtr<nsIInterfaceRequestor> callbacks;
+     mTransaction->GetSecurityCallbacks(getter_AddRefs(callbacks));
+     nsCOMPtr<nsISSLSocketControl> secCtrl(do_QueryInterface(mSecInfo));
+     if (secCtrl) {
+@@ -1542,16 +1542,18 @@ FWD_TS_PTR(GetPeerAddr, mozilla::net::Ne
+ FWD_TS_PTR(GetSelfAddr, mozilla::net::NetAddr);
+ FWD_TS_ADDREF(GetScriptablePeerAddr, nsINetAddr);
+ FWD_TS_ADDREF(GetScriptableSelfAddr, nsINetAddr);
+ FWD_TS_ADDREF(GetSecurityInfo, nsISupports);
+ FWD_TS_ADDREF(GetSecurityCallbacks, nsIInterfaceRequestor);
  FWD_TS_PTR(IsAlive, bool);
  FWD_TS_PTR(GetConnectionFlags, uint32_t);
  FWD_TS(SetConnectionFlags, uint32_t);
@@ -235,10 +420,20 @@ diff --git a/netwerk/protocol/http/TunnelUtils.cpp b/netwerk/protocol/http/Tunne
  FWD_TS_PTR(GetRecvBufferSize, uint32_t);
  FWD_TS(SetRecvBufferSize, uint32_t);
  
+ nsresult
+ SocketTransportShim::GetOriginAttributes(mozilla::OriginAttributes* aOriginAttributes)
+ {
+   return mWrapped->GetOriginAttributes(aOriginAttributes);
+ }
 diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
 --- a/netwerk/protocol/http/nsHttpChannel.cpp
 +++ b/netwerk/protocol/http/nsHttpChannel.cpp
-@@ -498,6 +498,7 @@ nsHttpChannel::Connect()
+@@ -492,16 +492,17 @@ nsHttpChannel::Connect()
+         mCaps |=  NS_HTTP_DISALLOW_SPDY;
+     }
+ 
+     // Finalize ConnectionInfo flags before SpeculativeConnect
+     mConnectionInfo->SetAnonymous((mLoadFlags & LOAD_ANONYMOUS) != 0);
      mConnectionInfo->SetPrivate(mPrivateBrowsing);
      mConnectionInfo->SetNoSpdy(mCaps & NS_HTTP_DISALLOW_SPDY);
      mConnectionInfo->SetBeConservative((mCaps & NS_HTTP_BE_CONSERVATIVE) || mBeConservative);
@@ -246,10 +441,20 @@ diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsH
  
      // Consider opening a TCP connection right away.
      SpeculativeConnect();
+ 
+     // Don't allow resuming when cache must be used
+     if (mResuming && (mLoadFlags & LOAD_ONLY_FROM_CACHE)) {
+         LOG(("Resuming from cache is not supported yet"));
+         return NS_ERROR_DOCUMENT_NOT_CACHED;
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.cpp
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.cpp
-@@ -92,6 +92,7 @@ nsHttpConnectionInfo::Init(const nsACStr
+@@ -87,16 +87,17 @@ nsHttpConnectionInfo::Init(const nsACStr
+     LOG(("Init nsHttpConnectionInfo @%p\n", this));
+ 
+     mUsername = username;
+     mProxyInfo = proxyInfo;
+     mEndToEndSSL = e2eSSL;
      mUsingConnect = false;
      mNPNToken = npnToken;
      mOriginAttributes = originAttributes;
@@ -257,7 +462,17 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
  
      mUsingHttpsProxy = (proxyInfo && proxyInfo->IsHTTPS());
      mUsingHttpProxy = mUsingHttpsProxy || (proxyInfo && proxyInfo->IsHTTP());
-@@ -147,7 +148,8 @@ void nsHttpConnectionInfo::BuildHashKey(
+ 
+     if (mUsingHttpProxy) {
+         mUsingConnect = mEndToEndSSL;  // SSL always uses CONNECT
+         uint32_t resolveFlags = 0;
+         if (NS_SUCCEEDED(mProxyInfo->GetResolveFlags(&resolveFlags)) &&
+@@ -142,17 +143,18 @@ void nsHttpConnectionInfo::BuildHashKey(
+     // byte 0 is P/T/. {P,T} for Plaintext/TLS Proxy over HTTP
+     // byte 1 is S/. S is for end to end ssl such as https:// uris
+     // byte 2 is A/. A is for an anonymous channel (no cookies, etc..)
+     // byte 3 is P/. P is for a private browising channel
+     // byte 4 is I/. I is for insecure scheme on TLS for http:// uris
      // byte 5 is X/. X is for disallow_spdy flag
      // byte 6 is C/. C is for be Conservative
  
@@ -267,7 +482,17 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
      mHashKey.Append(keyHost);
      if (!mNetworkInterfaceId.IsEmpty()) {
          mHashKey.Append('(');
-@@ -259,6 +261,7 @@ nsHttpConnectionInfo::Clone() const
+         mHashKey.Append(mNetworkInterfaceId);
+         mHashKey.Append(')');
+     }
+     mHashKey.Append(':');
+     mHashKey.AppendInt(keyPort);
+@@ -254,16 +256,17 @@ nsHttpConnectionInfo::Clone() const
+     }
+ 
+     // Make sure the anonymous, insecure-scheme, and private flags are transferred
+     clone->SetAnonymous(GetAnonymous());
+     clone->SetPrivate(GetPrivate());
      clone->SetInsecureScheme(GetInsecureScheme());
      clone->SetNoSpdy(GetNoSpdy());
      clone->SetBeConservative(GetBeConservative());
@@ -275,7 +500,17 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
      MOZ_ASSERT(clone->Equals(this));
  
      return clone;
-@@ -282,6 +285,7 @@ nsHttpConnectionInfo::CloneAsDirectRoute
+ }
+ 
+ void
+ nsHttpConnectionInfo::CloneAsDirectRoute(nsHttpConnectionInfo **outCI)
+ {
+@@ -277,16 +280,17 @@ nsHttpConnectionInfo::CloneAsDirectRoute
+                                  EmptyCString(), mUsername, mProxyInfo,
+                                  mOriginAttributes, mEndToEndSSL);
+     // Make sure the anonymous, insecure-scheme, and private flags are transferred
+     clone->SetAnonymous(GetAnonymous());
+     clone->SetPrivate(GetPrivate());
      clone->SetInsecureScheme(GetInsecureScheme());
      clone->SetNoSpdy(GetNoSpdy());
      clone->SetBeConservative(GetBeConservative());
@@ -283,7 +518,17 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
      if (!mNetworkInterfaceId.IsEmpty()) {
          clone->SetNetworkInterfaceId(mNetworkInterfaceId);
      }
-@@ -310,6 +314,15 @@ nsHttpConnectionInfo::CreateWildCard(nsH
+     clone.forget(outCI);
+ }
+ 
+ nsresult
+ nsHttpConnectionInfo::CreateWildCard(nsHttpConnectionInfo **outParam)
+@@ -305,16 +309,25 @@ nsHttpConnectionInfo::CreateWildCard(nsH
+                                      mOriginAttributes, true);
+     // Make sure the anonymous and private flags are transferred!
+     clone->SetAnonymous(GetAnonymous());
+     clone->SetPrivate(GetPrivate());
+     clone.forget(outParam);
      return NS_OK;
  }
  
@@ -292,17 +537,27 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
 +    mTlsFlags = aTlsFlags;
 +
 +    char buf[15];
-+    snprintf(buf, sizeof(buf), "%08x", mTlsFlags);
++    SprintfLiteral(buf, "%08x", mTlsFlags);
 +    mHashKey.Replace(18, 8, buf, 8);
 +}
 +
  bool
  nsHttpConnectionInfo::UsingProxy()
  {
+     if (!mProxyInfo)
+         return false;
+     return !mProxyInfo->IsDirect();
+ }
+ 
 diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/http/nsHttpConnectionInfo.h
 --- a/netwerk/protocol/http/nsHttpConnectionInfo.h
 +++ b/netwerk/protocol/http/nsHttpConnectionInfo.h
-@@ -122,6 +122,9 @@ public:
+@@ -117,16 +117,19 @@ public:
+     void          SetNoSpdy(bool aNoSpdy)
+                                        { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
+     bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
+ 
+     void          SetBeConservative(bool aBeConservative)
                                              { mHashKey.SetCharAt(aBeConservative ? 'C' : '.', 6); }
      bool          GetBeConservative() const { return mHashKey.CharAt(6) == 'C'; }
  
@@ -312,7 +567,17 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
      const nsCString &GetNetworkInterfaceId() const { return mNetworkInterfaceId; }
  
      const nsCString &GetNPNToken() { return mNPNToken; }
-@@ -176,6 +179,8 @@ private:
+     const nsCString &GetUsername() { return mUsername; }
+ 
+     const OriginAttributes &GetOriginAttributes() { return mOriginAttributes; }
+ 
+     // Returns true for any kind of proxy (http, socks, https, etc..)
+@@ -171,16 +174,18 @@ private:
+     nsCOMPtr<nsProxyInfo>  mProxyInfo;
+     bool                   mUsingHttpProxy;
+     bool                   mUsingHttpsProxy;
+     bool                   mEndToEndSSL;
+     bool                   mUsingConnect;  // if will use CONNECT with http proxy
      nsCString              mNPNToken;
      OriginAttributes       mOriginAttributes;
  
@@ -321,10 +586,20 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
  // for RefPtr
      NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsHttpConnectionInfo)
  };
+ 
+ } // namespace net
+ } // namespace mozilla
+ 
+ #endif // nsHttpConnectionInfo_h__
 diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 --- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 +++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
-@@ -3848,6 +3848,7 @@ nsHalfOpenSocket::SetupStreams(nsISocket
+@@ -3848,16 +3848,17 @@ nsHalfOpenSocket::SetupStreams(nsISocket
+         tmpFlags |= nsISocketTransport::DISABLE_RFC1918;
+     }
+ 
+     if (!isBackup && mEnt->mUseFastOpen) {
+         socketTransport->SetFastOpenCallback(this);
      }
  
      socketTransport->SetConnectionFlags(tmpFlags);
@@ -332,26 +607,47 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/ht
  
      const OriginAttributes& originAttributes = mEnt->mConnInfo->GetOriginAttributes();
      if (originAttributes != OriginAttributes()) {
+         socketTransport->SetOriginAttributes(originAttributes);
+     }
+ 
+     socketTransport->SetQoSBits(gHttpHandler->GetQoSBits());
+ 
 diff --git a/netwerk/protocol/http/nsIHttpChannelInternal.idl b/netwerk/protocol/http/nsIHttpChannelInternal.idl
 --- a/netwerk/protocol/http/nsIHttpChannelInternal.idl
 +++ b/netwerk/protocol/http/nsIHttpChannelInternal.idl
-@@ -216,6 +216,12 @@ interface nsIHttpChannelInternal : nsISu
+@@ -211,16 +211,23 @@ interface nsIHttpChannelInternal : nsISu
+ 
+     /**
+      * If true, do not use newer protocol features that might have interop problems
+      * on the Internet. Intended only for use with critical infra like the updater.
+      * default is false.
       */
      [must_use] attribute boolean beConservative;
  
 +    /**
-+     * opaque flags for non-standard behavior of the TLS system
-+     * do not set these unless you are a TLS developer.
++     * An opaque flags for non-standard behavior of the TLS system.
++     * It is unlikely this will need to be set outside of telemetry studies
++     * relating to the TLS implementation.
 +     */
 +    [must_use] attribute unsigned long tlsFlags;
 +
      [must_use] readonly attribute PRTime lastModifiedTime;
  
      /**
+      * Force a channel that has not been AsyncOpen'ed to skip any check for possible
+      * interception and proceed immediately to open a previously-synthesized cache
+      * entry using the provided ID.
+      */
+     [must_use] void forceIntercepted(in uint64_t aInterceptionID);
 diff --git a/netwerk/socket/nsISSLSocketControl.idl b/netwerk/socket/nsISSLSocketControl.idl
 --- a/netwerk/socket/nsISSLSocketControl.idl
 +++ b/netwerk/socket/nsISSLSocketControl.idl
-@@ -102,6 +102,11 @@ interface nsISSLSocketControl : nsISuppo
+@@ -97,16 +97,21 @@ interface nsISSLSocketControl : nsISuppo
+ 
+     const short KEY_EXCHANGE_UNKNOWN = -1;
+ 
+     /*
+      * The original flags from the socket provider.
       */
      readonly attribute uint32_t providerFlags;
  
@@ -363,20 +659,37 @@ diff --git a/netwerk/socket/nsISSLSocketControl.idl b/netwerk/socket/nsISSLSocke
      /* These values are defined by TLS. */
      const short SSL_VERSION_3   = 0x0300;
      const short TLS_VERSION_1   = 0x0301;
+     const short TLS_VERSION_1_1 = 0x0302;
+     const short TLS_VERSION_1_2 = 0x0303;
+     const short TLS_VERSION_1_3 = 0x0304;
+     const short SSL_VERSION_UNKNOWN = -1;
+ 
 diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
 --- a/netwerk/socket/nsISocketProvider.idl
 +++ b/netwerk/socket/nsISocketProvider.idl
-@@ -35,6 +35,9 @@ interface nsISocketProvider : nsISupport
+@@ -30,29 +30,34 @@ interface nsISocketProvider : nsISupport
+      * @param aPort
+      *        The origin port for this connection.
+      * @param aProxyHost
+      *        If non-null, the proxy hostname for this connection.
+      * @param aProxyPort
       *        The proxy port for this connection.
       * @param aFlags
       *        Control flags that govern this connection (see below.)
 +     * @param aTlsFlags
-+     *        opaque flags for non-standard behavior of the TLS system
-+     *        do not set these unless you are a TLS developer.
++     *        An opaque flags for non-standard behavior of the TLS system.
++     *        It is unlikely this will need to be set outside of telemetry
++     *        studies relating to the TLS implementation.
       * @param aFileDesc
       *        The resulting PRFileDesc.
       * @param aSecurityInfo
-@@ -48,6 +51,7 @@ interface nsISocketProvider : nsISupport
+      *        Any security info that should be associated with aFileDesc.  This
+      *        object typically implements nsITransportSecurityInfo.
+      */
+     [noscript]
+     void newSocket(in long                      aFamily,
+                    in string                    aHost, 
+                    in long                      aPort,
                     in nsIProxyInfo              aProxy,
                     in const_OriginAttributesRef aOriginAttributes,
                     in unsigned long             aFlags,
@@ -384,7 +697,17 @@ diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProv
                     out PRFileDescStar           aFileDesc, 
                     out nsISupports              aSecurityInfo);
  
-@@ -68,6 +72,7 @@ interface nsISocketProvider : nsISupport
+     /**
+      * addToSocket
+      *
+      * This function is called to allow the socket provider to layer a
+      * PRFileDesc on top of another PRFileDesc.  For example, SSL via a SOCKS
+@@ -63,16 +68,17 @@ interface nsISocketProvider : nsISupport
+      */
+     [noscript]
+     void addToSocket(in long                      aFamily,
+                      in string                    aHost, 
+                      in long                      aPort,
                       in nsIProxyInfo              aProxy,
                       in const_OriginAttributesRef aOriginAttributes,
                       in unsigned long             aFlags,
@@ -392,10 +715,20 @@ diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProv
                       in PRFileDescStar            aFileDesc, 
                       out nsISupports              aSecurityInfo);
  
+     /**
+      * PROXY_RESOLVES_HOST
+      *
+      * This flag is set if the proxy is to perform hostname resolution instead
+      * of the client.  When set, the hostname parameter passed when in this
 diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.cpp
 --- a/netwerk/socket/nsSOCKSIOLayer.cpp
 +++ b/netwerk/socket/nsSOCKSIOLayer.cpp
-@@ -78,7 +78,8 @@ public:
+@@ -73,17 +73,18 @@ public:
+     NS_DECL_THREADSAFE_ISUPPORTS
+     NS_DECL_NSISOCKSSOCKETINFO
+     NS_DECL_NSIDNSLISTENER
+ 
+     void Init(int32_t version,
                int32_t family,
                nsIProxyInfo *proxy,
                const char *destinationHost,
@@ -405,7 +738,17 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
  
      void SetConnectTimeout(PRIntervalTime to);
      PRStatus DoHandshake(PRFileDesc *fd, int16_t oflags = -1);
-@@ -216,6 +217,7 @@ private:
+     int16_t GetPollFlags() const;
+     bool IsConnected() const { return mState == SOCKS_CONNECTED; }
+     void ForgetFD() { mFD = nullptr; }
+     void SetNamedPipeFD(PRFileDesc *fd) { mFD = fd; }
+ 
+@@ -211,32 +212,34 @@ private:
+     nsresult                mLookupStatus;
+     PRFileDesc             *mFD;
+ 
+     nsCString mDestinationHost;
+     nsCOMPtr<nsIProxyInfo> mProxy;
      int32_t   mVersion;   // SOCKS version 4 or 5
      int32_t   mDestinationFamily;
      uint32_t  mFlags;
@@ -413,7 +756,16 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
      NetAddr   mInternalProxyAddr;
      NetAddr   mExternalProxyAddr;
      NetAddr   mDestinationAddr;
-@@ -232,6 +234,7 @@ nsSOCKSSocketInfo::nsSOCKSSocketInfo()
+     PRIntervalTime mTimeout;
+     nsCString mProxyUsername; // Cache, from mProxy
+ };
+ 
+ nsSOCKSSocketInfo::nsSOCKSSocketInfo()
+     : mState(SOCKS_INITIAL)
+     , mDataIoPtr(nullptr)
+     , mDataLength(0)
+     , mReadOffset(0)
+     , mAmountToRead(0)
      , mVersion(-1)
      , mDestinationFamily(AF_INET)
      , mFlags(0)
@@ -421,7 +773,17 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
      , mTimeout(PR_INTERVAL_NO_TIMEOUT)
  {
      mData = new uint8_t[BUFFER_SIZE];
-@@ -359,13 +362,14 @@ private:
+ 
+     mInternalProxyAddr.raw.family = AF_INET;
+     mInternalProxyAddr.inet.ip = htonl(INADDR_ANY);
+     mInternalProxyAddr.inet.port = htons(0);
+ 
+@@ -354,23 +357,24 @@ private:
+   }
+ 
+   uint8_t* mBuf;
+   size_t mLength;
+ };
  
  
  void
@@ -437,7 +799,17 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
      mProxy->GetUsername(mProxyUsername); // cache
  }
  
-@@ -1518,6 +1522,7 @@ nsSOCKSIOLayerAddToSocket(int32_t family
+ NS_IMPL_ISUPPORTS(nsSOCKSSocketInfo, nsISOCKSSocketInfo, nsIDNSListener)
+ 
+ NS_IMETHODIMP
+ nsSOCKSSocketInfo::GetExternalProxyAddr(NetAddr * *aExternalProxyAddr)
+ {
+@@ -1513,16 +1517,17 @@ nsSOCKSIOLayerListen(PRFileDesc *fd, int
+ // add SOCKS IO layer to an existing socket
+ nsresult
+ nsSOCKSIOLayerAddToSocket(int32_t family,
+                           const char *host,
+                           int32_t port,
                            nsIProxyInfo *proxy,
                            int32_t socksVersion,
                            uint32_t flags,
@@ -445,7 +817,17 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
                            PRFileDesc *fd,
                            nsISupports** info)
  {
-@@ -1577,7 +1582,7 @@ nsSOCKSIOLayerAddToSocket(int32_t family
+     NS_ENSURE_TRUE((socksVersion == 4) || (socksVersion == 5), NS_ERROR_NOT_INITIALIZED);
+ 
+ 
+     if (firstTime)
+     {
+@@ -1572,17 +1577,17 @@ nsSOCKSIOLayerAddToSocket(int32_t family
+     {
+         // clean up IOLayerStub
+         LOGERROR(("Failed to create nsSOCKSSocketInfo()."));
+         PR_Free(layer); // PR_CreateIOLayerStub() uses PR_Malloc().
+         return NS_ERROR_FAILURE;
      }
  
      NS_ADDREF(infoObject);
@@ -454,10 +836,20 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.c
      layer->secret = (PRFilePrivate*) infoObject;
  
      PRDescIdentity fdIdentity = PR_GetLayersIdentity(fd);
+ #if defined(XP_WIN)
+     if (fdIdentity == mozilla::net::nsNamedPipeLayerIdentity) {
+         // remember named pipe fd on the info object so that we can switch
+         // blocking and non-blocking mode on the pipe later.
+         infoObject->SetNamedPipeFD(fd);
 diff --git a/netwerk/socket/nsSOCKSIOLayer.h b/netwerk/socket/nsSOCKSIOLayer.h
 --- a/netwerk/socket/nsSOCKSIOLayer.h
 +++ b/netwerk/socket/nsSOCKSIOLayer.h
-@@ -17,6 +17,7 @@ nsresult nsSOCKSIOLayerAddToSocket(int32
+@@ -12,14 +12,15 @@
+ #include "nsIProxyInfo.h"
+ 
+ nsresult nsSOCKSIOLayerAddToSocket(int32_t       family,
+                                    const char   *host,
+                                    int32_t       port,
                                     nsIProxyInfo *proxyInfo,
                                     int32_t       socksVersion,
                                     uint32_t      flags,
@@ -465,10 +857,18 @@ diff --git a/netwerk/socket/nsSOCKSIOLayer.h b/netwerk/socket/nsSOCKSIOLayer.h
                                     PRFileDesc   *fd,
                                     nsISupports **info);
  
+ bool IsHostLocalTarget(const nsACString& aHost);
+ 
+ #endif /* nsSOCKSIOLayer_h__ */
 diff --git a/netwerk/socket/nsSOCKSSocketProvider.cpp b/netwerk/socket/nsSOCKSSocketProvider.cpp
 --- a/netwerk/socket/nsSOCKSSocketProvider.cpp
 +++ b/netwerk/socket/nsSOCKSSocketProvider.cpp
-@@ -50,6 +50,7 @@ nsSOCKSSocketProvider::NewSocket(int32_t
+@@ -45,16 +45,17 @@ nsSOCKSSocketProvider::CreateV5(nsISuppo
+ 
+ NS_IMETHODIMP
+ nsSOCKSSocketProvider::NewSocket(int32_t family,
+                                  const char *host,
+                                  int32_t port,
                                   nsIProxyInfo *proxy,
                                   const OriginAttributes &originAttributes,
                                   uint32_t flags,
@@ -476,7 +876,17 @@ diff --git a/netwerk/socket/nsSOCKSSocketProvider.cpp b/netwerk/socket/nsSOCKSSo
                                   PRFileDesc **result,
                                   nsISupports **socksInfo)
  {
-@@ -75,6 +76,7 @@ nsSOCKSSocketProvider::NewSocket(int32_t
+     PRFileDesc *sock;
+ 
+ #if defined(XP_WIN)
+     nsAutoCString proxyHost;
+     proxy->GetHost(proxyHost);
+@@ -70,16 +71,17 @@ nsSOCKSSocketProvider::NewSocket(int32_t
+     }
+ 
+     nsresult rv = nsSOCKSIOLayerAddToSocket(family,
+                                             host,
+                                             port,
                                              proxy,
                                              mVersion,
                                              flags,
@@ -484,7 +894,17 @@ diff --git a/netwerk/socket/nsSOCKSSocketProvider.cpp b/netwerk/socket/nsSOCKSSo
                                              sock,
                                              socksInfo);
      if (NS_SUCCEEDED(rv)) {
-@@ -92,6 +94,7 @@ nsSOCKSSocketProvider::AddToSocket(int32
+         *result = sock;
+         return NS_OK;
+     }
+ 
+     return NS_ERROR_SOCKET_CREATE_FAILED;
+@@ -87,24 +89,26 @@ nsSOCKSSocketProvider::NewSocket(int32_t
+ 
+ NS_IMETHODIMP
+ nsSOCKSSocketProvider::AddToSocket(int32_t family,
+                                    const char *host,
+                                    int32_t port,
                                     nsIProxyInfo *proxy,
                                     const OriginAttributes &originAttributes,
                                     uint32_t flags,
@@ -492,7 +912,9 @@ diff --git a/netwerk/socket/nsSOCKSSocketProvider.cpp b/netwerk/socket/nsSOCKSSo
                                     PRFileDesc *sock,
                                     nsISupports **socksInfo)
  {
-@@ -101,6 +104,7 @@ nsSOCKSSocketProvider::AddToSocket(int32
+     nsresult rv = nsSOCKSIOLayerAddToSocket(family,
+                                             host,
+                                             port,
                                              proxy,
                                              mVersion,
                                              flags,
@@ -500,10 +922,19 @@ diff --git a/netwerk/socket/nsSOCKSSocketProvider.cpp b/netwerk/socket/nsSOCKSSo
                                              sock,
                                              socksInfo);
  
+     if (NS_FAILED(rv))
+         rv = NS_ERROR_SOCKET_CREATE_FAILED;
+     return rv;
+ }
 diff --git a/netwerk/socket/nsUDPSocketProvider.cpp b/netwerk/socket/nsUDPSocketProvider.cpp
 --- a/netwerk/socket/nsUDPSocketProvider.cpp
 +++ b/netwerk/socket/nsUDPSocketProvider.cpp
-@@ -21,6 +21,7 @@ nsUDPSocketProvider::NewSocket(int32_t a
+@@ -16,16 +16,17 @@ nsUDPSocketProvider::~nsUDPSocketProvide
+ 
+ NS_IMETHODIMP
+ nsUDPSocketProvider::NewSocket(int32_t aFamily,
+                                const char *aHost,
+                                int32_t aPort,
                                 nsIProxyInfo *aProxy,
                                 const OriginAttributes &originAttributes,
                                 uint32_t aFlags,
@@ -511,7 +942,17 @@ diff --git a/netwerk/socket/nsUDPSocketProvider.cpp b/netwerk/socket/nsUDPSocket
                                 PRFileDesc * *aFileDesc,
                                 nsISupports **aSecurityInfo)
  {
-@@ -41,6 +42,7 @@ nsUDPSocketProvider::AddToSocket(int32_t
+     NS_ENSURE_ARG_POINTER(aFileDesc);
+ 
+     PRFileDesc* udpFD = PR_OpenUDPSocket(aFamily);
+     if (!udpFD)
+         return NS_ERROR_FAILURE;
+@@ -36,15 +37,16 @@ nsUDPSocketProvider::NewSocket(int32_t a
+ 
+ NS_IMETHODIMP
+ nsUDPSocketProvider::AddToSocket(int32_t aFamily,
+                                  const char *aHost,
+                                  int32_t aPort,
                                   nsIProxyInfo *aProxy,
                                   const OriginAttributes &originAttributes,
                                   uint32_t aFlags,
@@ -519,30 +960,64 @@ diff --git a/netwerk/socket/nsUDPSocketProvider.cpp b/netwerk/socket/nsUDPSocket
                                   struct PRFileDesc * aFileDesc,
                                   nsISupports **aSecurityInfo)
  {
+     // does not make sense to strap a UDP socket onto an existing socket
+     NS_NOTREACHED("Cannot layer UDP socket on an existing socket");
+     return NS_ERROR_UNEXPECTED;
+ }
 diff --git a/netwerk/test/unit/test_separate_connections.js b/netwerk/test/unit/test_tls_flags_separate_connections.js
 copy from netwerk/test/unit/test_separate_connections.js
 copy to netwerk/test/unit/test_tls_flags_separate_connections.js
 --- a/netwerk/test/unit/test_separate_connections.js
 +++ b/netwerk/test/unit/test_tls_flags_separate_connections.js
-@@ -7,7 +7,7 @@ XPCOMUtils.defineLazyGetter(this, "URL",
+@@ -1,94 +1,114 @@
+ Cu.import("resource://testing-common/httpd.js");
+ Cu.import("resource://gre/modules/NetUtil.jsm");
+ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ 
+ XPCOMUtils.defineLazyGetter(this, "URL", function() {
+   return "http://localhost:" + httpserv.identity.primaryPort;
  });
  
- // This unit test ensures each container has its own connection pool.
+-// This unit test ensures each container has its own connection pool.
 -// We verify this behavior by opening channels with different userContextId,
-+// We verify this behavior by opening channels with different tlsFlags,
- // and their connection info's hash keys should be different.
+-// and their connection info's hash keys should be different.
++// This unit test ensures connections with different tlsFlags have their own
++// connection pool. We verify this behavior by opening channels with different
++// tlsFlags, and their connection info's hash keys should be different.
  
- // In the first round of this test, we record the hash key in each container.
-@@ -17,6 +17,8 @@ XPCOMUtils.defineLazyGetter(this, "URL",
+-// In the first round of this test, we record the hash key in each container.
+-// In the second round, we check if each container's hash key is consistent
+-// and different from other container's hash key.
++// In the first round of this test, we record the hash key for each connection.
++// In the second round, we check if each connection's hash key is consistent
++// and different from other connection's hash key.
+ 
  let httpserv = null;
  let gSecondRoundStarted = false;
  
-+let randomFlagValues = null;
++let randomFlagValues = [
++    0x00000000,
++
++    0xFFFFFFFF,
++
++    0x12345678,
++    0x12345678,
++
++    0x11111111,
++    0x22222222,
++
++    0xAAAAAAAA,
++    0x77777777,
++
++    0xBBBBBBBB,
++    0xCCCCCCCC
++];
 +
  function handler(metadata, response) {
    response.setHeader("Content-Type", "text/plain", false);
    response.setHeader("Cache-Control", "no-cache", false);
-@@ -25,16 +27,18 @@ function handler(metadata, response) {
+   response.setStatusLine(metadata.httpVersion, 200, "OK");
+   let body = "0123456789";
    response.bodyOutputStream.write(body, body.length);
  }
  
@@ -566,7 +1041,8 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
  }
  
  let gTestsRun = 0;
-@@ -43,22 +47,22 @@ Listener.prototype = {
+ Listener.prototype = {
+   onStartRequest: function(request, context) {
      request.QueryInterface(Ci.nsIHttpChannel)
             .QueryInterface(Ci.nsIHttpChannelInternal);
  
@@ -596,7 +1072,7 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
      }
    },
    onDataAvailable: function(request, ctx, stream, off, cnt) {
-@@ -66,7 +70,7 @@ Listener.prototype = {
+     read_stream(stream, cnt);
    },
    onStopRequest: function() {
      gTestsRun++;
@@ -605,7 +1081,14 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
        gTestsRun = 0;
        if (gSecondRoundStarted) {
          // The second round finishes.
-@@ -81,14 +85,29 @@ Listener.prototype = {
+         httpserv.stop(do_test_finished);
+       } else {
+         // The first round finishes. Do the second round.
+         gSecondRoundStarted = true;
+         doTest();
+       }
+     }
+   },
  };
  
  function doTest() {
@@ -620,28 +1103,18 @@ copy to netwerk/test/unit/test_tls_flags_separate_connections.js
  }
  
  function run_test() {
-+  // generate 10 random flag values
-+  randomFlagValues = new Uint32Array(10);
-+
-+  for (let i = 0; i < randomFlagValues.length; i++) {
-+    let flag_value = 0;
-+
-+    for (let j = 0; j < 32; j++) {
-+      if (Math.random() < 0.5) {
-+        flag_value |= (1 << j);
-+      }
-+    }
-+
-+    randomFlagValues[i] = flag_value;
-+  }
-+
    do_test_pending();
    httpserv = new HttpServer();
    httpserv.registerPathHandler("/", handler);
 diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
 --- a/netwerk/test/unit/xpcshell.ini
 +++ b/netwerk/test/unit/xpcshell.ini
-@@ -396,3 +396,4 @@ skip-if = os == "android"
+@@ -391,8 +391,9 @@ skip-if = os == "android"
+ [test_trackingProtection_annotateChannels.js]
+ [test_race_cache_with_network.js]
+ [test_channel_priority.js]
+ [test_bug1312774_http1.js]
+ [test_1351443-missing-NewChannel2.js]
  [test_bug1312782_http1.js]
  [test_bug1355539_http1.js]
  [test_bug1378385_http1.js]
@@ -649,16 +1122,32 @@ diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
 diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
 --- a/security/manager/ssl/nsNSSIOLayer.cpp
 +++ b/security/manager/ssl/nsNSSIOLayer.cpp
-@@ -75,7 +75,7 @@ getSiteKey(const nsACString& hostName, u
+@@ -70,17 +70,18 @@ getSiteKey(const nsACString& hostName, u
+   key.AppendASCII(":");
+   key.AppendInt(port);
+ }
+ 
+ } // unnamed namespace
  
  extern LazyLogModule gPIPNSSLog;
  
 -nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags)
-+nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags, uint32_t providerTlsFlags)
++nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
++uint32_t providerTlsFlags)
    : mFd(nullptr),
      mCertVerificationState(before_cert_verification),
      mSharedState(aState),
-@@ -99,6 +99,7 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedS
+     mForSTARTTLS(false),
+     mHandshakePending(true),
+     mRememberClientAuthCertificate(false),
+     mPreliminaryHandshakeDone(false),
+     mNPNCompleted(false),
+@@ -94,16 +95,17 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedS
+     mNotedTimeUntilReady(false),
+     mFailedVerification(false),
+     mKEAUsed(nsISSLSocketControl::KEY_EXCHANGE_UNKNOWN),
+     mKEAKeyBits(0),
+     mSSLVersionUsed(nsISSLSocketControl::SSL_VERSION_UNKNOWN),
      mMACAlgorithmUsed(nsISSLSocketControl::SSL_MAC_UNKNOWN),
      mBypassAuthentication(false),
      mProviderFlags(providerFlags),
@@ -666,7 +1155,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      mSocketCreationTimestamp(TimeStamp::Now()),
      mPlaintextBytesRead(0),
      mClientCert(nullptr)
-@@ -123,6 +124,13 @@ nsNSSSocketInfo::GetProviderFlags(uint32
+ {
+   mTLSVersionRange.min = 0;
+   mTLSVersionRange.max = 0;
+ }
+ 
+@@ -118,16 +120,23 @@ NS_IMPL_ISUPPORTS_INHERITED(nsNSSSocketI
+ NS_IMETHODIMP
+ nsNSSSocketInfo::GetProviderFlags(uint32_t* aProviderFlags)
+ {
+   *aProviderFlags = mProviderFlags;
+   return NS_OK;
  }
  
  NS_IMETHODIMP
@@ -680,7 +1179,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  nsNSSSocketInfo::GetKEAUsed(int16_t* aKea)
  {
    *aKea = mKEAUsed;
-@@ -1813,7 +1821,8 @@ nsSSLIOLayerNewSocket(int32_t family,
+   return NS_OK;
+ }
+ 
+ NS_IMETHODIMP
+ nsNSSSocketInfo::GetKEAKeyBits(uint32_t* aKeyBits)
+@@ -1808,25 +1817,26 @@ nsresult
+ nsSSLIOLayerNewSocket(int32_t family,
+                       const char* host,
+                       int32_t port,
+                       nsIProxyInfo *proxy,
+                       const OriginAttributes& originAttributes,
                        PRFileDesc** fd,
                        nsISupports** info,
                        bool forSTARTTLS,
@@ -690,7 +1199,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  {
  
    PRFileDesc* sock = PR_OpenTCPSocket(family);
-@@ -1821,7 +1830,7 @@ nsSSLIOLayerNewSocket(int32_t family,
+   if (!sock) return NS_ERROR_OUT_OF_MEMORY;
  
    nsresult rv = nsSSLIOLayerAddToSocket(family, host, port, proxy,
                                          originAttributes, sock, info,
@@ -699,7 +1208,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    if (NS_FAILED(rv)) {
      PR_Close(sock);
      return rv;
-@@ -2425,6 +2434,8 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+   }
+ 
+   *fd = sock;
+   return NS_OK;
+ }
+@@ -2420,16 +2430,18 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+     }
+   }
+ 
+   SSLVersionRange range;
+   if (SSL_VersionRangeGet(fd, &range) != SECSuccess) {
      return NS_ERROR_FAILURE;
    }
  
@@ -708,7 +1227,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    if ((infoObject->GetProviderFlags() & nsISocketProvider::BE_CONSERVATIVE) &&
        (range.max > SSL_LIBRARY_VERSION_TLS_1_2)) {
      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-@@ -2522,6 +2533,9 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+             ("[%p] nsSSLIOLayerSetOptions: range.max limited to 1.2 due to BE_CONSERVATIVE flag\n",
+              fd));
+     range.max = SSL_LIBRARY_VERSION_TLS_1_2;
+   }
+ 
+@@ -2517,16 +2529,19 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+     peerId.AppendLiteral("private:");
+   }
+   if (flags & nsISocketProvider::MITM_OK) {
+     peerId.AppendLiteral("bypassAuth:");
+   }
    if (flags & nsISocketProvider::BE_CONSERVATIVE) {
      peerId.AppendLiteral("beConservative:");
    }
@@ -718,7 +1247,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    peerId.Append(host);
    peerId.Append(':');
    peerId.AppendInt(port);
-@@ -2544,7 +2558,8 @@ nsSSLIOLayerAddToSocket(int32_t family,
+   nsAutoCString suffix;
+   infoObject->GetOriginAttributes().CreateSuffix(suffix);
+   peerId.Append(suffix);
+   if (SECSuccess != SSL_SetSockPeerID(fd, peerId.get())) {
+     return NS_ERROR_FAILURE;
+@@ -2539,27 +2554,28 @@ nsresult
+ nsSSLIOLayerAddToSocket(int32_t family,
+                         const char* host,
+                         int32_t port,
+                         nsIProxyInfo* proxy,
+                         const OriginAttributes& originAttributes,
                          PRFileDesc* fd,
                          nsISupports** info,
                          bool forSTARTTLS,
@@ -728,7 +1267,9 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  {
    nsNSSShutDownPreventionLock locker;
    PRFileDesc* layer = nullptr;
-@@ -2554,7 +2569,7 @@ nsSSLIOLayerAddToSocket(int32_t family,
+   PRFileDesc* plaintextLayer = nullptr;
+   nsresult rv;
+   PRStatus stat;
  
    SharedSSLState* sharedState =
      providerFlags & nsISocketProvider::NO_PERMANENT_STORAGE ? PrivateSSLState() : PublicSSLState();
@@ -737,19 +1278,40 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
    if (!infoObject) return NS_ERROR_FAILURE;
  
    NS_ADDREF(infoObject);
+   infoObject->SetForSTARTTLS(forSTARTTLS);
+   infoObject->SetHostName(host);
+   infoObject->SetPort(port);
+   infoObject->SetOriginAttributes(originAttributes);
+ 
 diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOLayer.h
 --- a/security/manager/ssl/nsNSSIOLayer.h
 +++ b/security/manager/ssl/nsNSSIOLayer.h
-@@ -35,7 +35,7 @@ class nsNSSSocketInfo final : public moz
+@@ -30,17 +30,18 @@ using mozilla::OriginAttributes;
+ 
+ class nsIObserver;
+ 
+ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
+                               public nsISSLSocketControl,
                                public nsIClientAuthUserDecision
  {
  public:
 -  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags);
-+  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags, uint32_t providerTlsFlags);
++  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags,
++  uint32_t providerTlsFlags);
  
    NS_DECL_ISUPPORTS_INHERITED
    NS_DECL_NSISSLSOCKETCONTROL
-@@ -75,6 +75,7 @@ public:
+   NS_DECL_NSICLIENTAUTHUSERDECISION
+ 
+   void SetForSTARTTLS(bool aForSTARTTLS);
+   bool GetForSTARTTLS();
+ 
+@@ -70,16 +71,17 @@ public:
+   // it gets reset back to false.
+   void SetFullHandshake() { mIsFullHandshake = true; }
+   bool IsFullHandshake() const { return mIsFullHandshake; }
+ 
+   bool GetJoined() { return mJoined; }
    void SetSentClientCert() { mSentClientCert = true; }
  
    uint32_t GetProviderFlags() const { return mProviderFlags; }
@@ -757,7 +1319,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  
    mozilla::psm::SharedSSLState& SharedState();
  
-@@ -156,6 +157,7 @@ private:
+   // XXX: These are only used on for diagnostic purposes
+   enum CertVerificationState {
+     before_cert_verification,
+     waiting_for_cert_verification,
+     after_cert_verification
+@@ -151,16 +153,17 @@ private:
+   // Values are from nsISSLSocketControl
+   int16_t mKEAUsed;
+   uint32_t mKEAKeyBits;
+   int16_t mSSLVersionUsed;
+   int16_t mMACAlgorithmUsed;
    bool    mBypassAuthentication;
  
    uint32_t mProviderFlags;
@@ -765,7 +1337,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
    mozilla::TimeStamp mSocketCreationTimestamp;
    uint64_t mPlaintextBytesRead;
  
-@@ -233,7 +235,8 @@ nsresult nsSSLIOLayerNewSocket(int32_t f
+   nsCOMPtr<nsIX509Cert> mClientCert;
+ };
+ 
+ class nsSSLIOLayerHelpers
+ {
+@@ -228,24 +231,26 @@ private:
+ nsresult nsSSLIOLayerNewSocket(int32_t family,
+                                const char* host,
+                                int32_t port,
+                                nsIProxyInfo *proxy,
+                                const OriginAttributes& originAttributes,
                                 PRFileDesc** fd,
                                 nsISupports** securityInfo,
                                 bool forSTARTTLS,
@@ -775,7 +1357,9 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  
  nsresult nsSSLIOLayerAddToSocket(int32_t family,
                                   const char* host,
-@@ -243,7 +246,8 @@ nsresult nsSSLIOLayerAddToSocket(int32_t
+                                  int32_t port,
+                                  nsIProxyInfo *proxy,
+                                  const OriginAttributes& originAttributes,
                                   PRFileDesc* fd,
                                   nsISupports** securityInfo,
                                   bool forSTARTTLS,
@@ -785,10 +1369,17 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  
  nsresult nsSSLIOLayerFreeTLSIntolerantSites();
  nsresult displayUnknownCertErrorAlert(nsNSSSocketInfo* infoObject, int error);
+ 
+ #endif // nsNSSIOLayer_h
 diff --git a/security/manager/ssl/nsSSLSocketProvider.cpp b/security/manager/ssl/nsSSLSocketProvider.cpp
 --- a/security/manager/ssl/nsSSLSocketProvider.cpp
 +++ b/security/manager/ssl/nsSSLSocketProvider.cpp
-@@ -28,6 +28,7 @@ nsSSLSocketProvider::NewSocket(int32_t f
+@@ -23,46 +23,50 @@ NS_IMPL_ISUPPORTS(nsSSLSocketProvider, n
+ 
+ NS_IMETHODIMP
+ nsSSLSocketProvider::NewSocket(int32_t family,
+                                const char *host,
+                                int32_t port,
                                 nsIProxyInfo *proxy,
                                 const OriginAttributes &originAttributes,
                                 uint32_t flags,
@@ -796,7 +1387,11 @@ diff --git a/security/manager/ssl/nsSSLSocketProvider.cpp b/security/manager/ssl
                                 PRFileDesc **_result,
                                 nsISupports **securityInfo)
  {
-@@ -39,7 +40,8 @@ nsSSLSocketProvider::NewSocket(int32_t f
+   nsresult rv = nsSSLIOLayerNewSocket(family,
+                                       host,
+                                       port,
+                                       proxy,
+                                       originAttributes,
                                        _result,
                                        securityInfo,
                                        false,
@@ -806,7 +1401,11 @@ diff --git a/security/manager/ssl/nsSSLSocketProvider.cpp b/security/manager/ssl
    return (NS_FAILED(rv)) ? NS_ERROR_SOCKET_CREATE_FAILED : NS_OK;
  }
  
-@@ -51,6 +53,7 @@ nsSSLSocketProvider::AddToSocket(int32_t
+ // Add the SSL IO layer to an existing socket
+ NS_IMETHODIMP
+ nsSSLSocketProvider::AddToSocket(int32_t family,
+                                  const char *host,
+                                  int32_t port,
                                   nsIProxyInfo *proxy,
                                   const OriginAttributes &originAttributes,
                                   uint32_t flags,
@@ -814,7 +1413,11 @@ diff --git a/security/manager/ssl/nsSSLSocketProvider.cpp b/security/manager/ssl
                                   PRFileDesc *aSocket,
                                   nsISupports **securityInfo)
  {
-@@ -62,7 +65,8 @@ nsSSLSocketProvider::AddToSocket(int32_t
+   nsresult rv = nsSSLIOLayerAddToSocket(family,
+                                         host,
+                                         port,
+                                         proxy,
+                                         originAttributes,
                                          aSocket,
                                          securityInfo,
                                          false,
@@ -827,7 +1430,12 @@ diff --git a/security/manager/ssl/nsSSLSocketProvider.cpp b/security/manager/ssl
 diff --git a/security/manager/ssl/nsTLSSocketProvider.cpp b/security/manager/ssl/nsTLSSocketProvider.cpp
 --- a/security/manager/ssl/nsTLSSocketProvider.cpp
 +++ b/security/manager/ssl/nsTLSSocketProvider.cpp
-@@ -28,6 +28,7 @@ nsTLSSocketProvider::NewSocket(int32_t f
+@@ -23,47 +23,51 @@ NS_IMPL_ISUPPORTS(nsTLSSocketProvider, n
+ 
+ NS_IMETHODIMP
+ nsTLSSocketProvider::NewSocket(int32_t family,
+                                const char *host,
+                                int32_t port,
                                 nsIProxyInfo *proxy,
                                 const OriginAttributes &originAttributes,
                                 uint32_t flags,
@@ -835,7 +1443,11 @@ diff --git a/security/manager/ssl/nsTLSSocketProvider.cpp b/security/manager/ssl
                                 PRFileDesc **_result,
                                 nsISupports **securityInfo)
  {
-@@ -39,7 +40,8 @@ nsTLSSocketProvider::NewSocket(int32_t f
+   nsresult rv = nsSSLIOLayerNewSocket(family,
+                                       host,
+                                       port,
+                                       proxy,
+                                       originAttributes,
                                        _result,
                                        securityInfo,
                                        true,
@@ -845,7 +1457,12 @@ diff --git a/security/manager/ssl/nsTLSSocketProvider.cpp b/security/manager/ssl
  
    return (NS_FAILED(rv)) ? NS_ERROR_SOCKET_CREATE_FAILED : NS_OK;
  }
-@@ -52,6 +54,7 @@ nsTLSSocketProvider::AddToSocket(int32_t
+ 
+ // Add the SSL IO layer to an existing socket
+ NS_IMETHODIMP
+ nsTLSSocketProvider::AddToSocket(int32_t family,
+                                  const char *host,
+                                  int32_t port,
                                   nsIProxyInfo *proxy,
                                   const OriginAttributes &originAttributes,
                                   uint32_t flags,
@@ -853,7 +1470,11 @@ diff --git a/security/manager/ssl/nsTLSSocketProvider.cpp b/security/manager/ssl
                                   PRFileDesc *aSocket,
                                   nsISupports **securityInfo)
  {
-@@ -63,7 +66,8 @@ nsTLSSocketProvider::AddToSocket(int32_t
+   nsresult rv = nsSSLIOLayerAddToSocket(family,
+                                         host,
+                                         port,
+                                         proxy,
+                                         originAttributes,
                                          aSocket,
                                          securityInfo,
                                          true,
