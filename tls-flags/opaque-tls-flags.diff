@@ -80,7 +80,7 @@ diff --git a/netwerk/base/nsSocketTransport2.cpp b/netwerk/base/nsSocketTranspor
                  break;
  
              // if the service was ssl or starttls, we want to hold onto the socket info
-@@ -2980,16 +2981,30 @@ nsSocketTransport::GetConnectionFlags(ui
+@@ -2991,16 +2992,30 @@ nsSocketTransport::GetConnectionFlags(ui
  NS_IMETHODIMP
  nsSocketTransport::SetConnectionFlags(uint32_t value)
  {
@@ -580,7 +580,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.h b/netwerk/protocol/htt
 diff --git a/netwerk/protocol/http/nsHttpConnectionMgr.cpp b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 --- a/netwerk/protocol/http/nsHttpConnectionMgr.cpp
 +++ b/netwerk/protocol/http/nsHttpConnectionMgr.cpp
-@@ -3843,16 +3843,17 @@ nsHalfOpenSocket::SetupStreams(nsISocket
+@@ -3848,16 +3848,17 @@ nsHalfOpenSocket::SetupStreams(nsISocket
          tmpFlags |= nsISocketTransport::DISABLE_RFC1918;
      }
  

@@ -8,7 +8,7 @@ Bug 1388925:
 Added an opaque flags in the http channel interface by which developer has a fine-grained capability to control TLS configurations.
 Basically, all the changes accounted for plumbing this TLS flags from JavaScript level to C++ code responsible for calling NSS module.
 We also added a unit test to make sure that separate connections are created if we use different tlsFlags.
-Basically we generate 10 random flag values and check the hashkey generated in the connection info.
+Basically we used a concrete set of values that covers the edge cases and check the hashkey generated in the connection info.
 
 diff --git a/netwerk/base/nsISocketTransport.idl b/netwerk/base/nsISocketTransport.idl
 --- a/netwerk/base/nsISocketTransport.idl
