@@ -414,7 +414,7 @@ diff --git a/netwerk/protocol/http/TunnelUtils.cpp b/netwerk/protocol/http/Tunne
 diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
 --- a/netwerk/protocol/http/nsHttpChannel.cpp
 +++ b/netwerk/protocol/http/nsHttpChannel.cpp
-@@ -493,16 +493,17 @@ nsHttpChannel::Connect()
+@@ -492,16 +492,17 @@ nsHttpChannel::Connect()
          mCaps |=  NS_HTTP_DISALLOW_SPDY;
      }
  
