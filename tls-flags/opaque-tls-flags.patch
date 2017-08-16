@@ -2,9 +2,9 @@
 # User Sajjad Arshad <sarshad@mozilla.com>
 # Date 1502839465 25200
 #      Tue Aug 15 16:24:25 2017 -0700
-# Node ID 5c137e3f0f8d35fe5370ce3fd4e64200aee96c74
+# Node ID c5d71b63f3b417cc356e8f43d699e7b074915536
 # Parent  ec83c820877e9a937e6bb2cd8af7729cf06c535d
-Bug 1388925: Adding an opaque flags to have a fine-grained control over TLS configurations. r=mcmanus r=keeler
+Bug 1388925 - Adding an opaque flags to have a fine-grained control over TLS configurations r=mcmanus,keeler
 This flags is added in the http channel interface by which developers can control the TLS
 connections from JavaScript code (e.g. Add-ons). Basically, all the changes accounted for
 plumbing this TLS flags from JavaScript level to C++ code responsible for calling NSS
