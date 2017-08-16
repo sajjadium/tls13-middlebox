@@ -1,8 +1,8 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1502839465 25200
-#      Tue Aug 15 16:24:25 2017 -0700
-# Node ID c5d71b63f3b417cc356e8f43d699e7b074915536
+# Date 1502912476 25200
+#      Wed Aug 16 12:41:16 2017 -0700
+# Node ID 0e90a97881083ab2fd602bbbb1078707e45c9fdf
 # Parent  ec83c820877e9a937e6bb2cd8af7729cf06c535d
 Bug 1388925 - Adding an opaque flags to have a fine-grained control over TLS configurations r=mcmanus,keeler
 This flags is added in the http channel interface by which developers can control the TLS
@@ -523,7 +523,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
  
  nsresult
  nsHttpConnectionInfo::CreateWildCard(nsHttpConnectionInfo **outParam)
-@@ -305,16 +309,25 @@ nsHttpConnectionInfo::CreateWildCard(nsH
+@@ -305,16 +309,23 @@ nsHttpConnectionInfo::CreateWildCard(nsH
                                       mOriginAttributes, true);
      // Make sure the anonymous and private flags are transferred!
      clone->SetAnonymous(GetAnonymous());
@@ -536,9 +536,7 @@ diff --git a/netwerk/protocol/http/nsHttpConnectionInfo.cpp b/netwerk/protocol/h
 +nsHttpConnectionInfo::SetTlsFlags(uint32_t aTlsFlags) {
 +    mTlsFlags = aTlsFlags;
 +
-+    char buf[15];
-+    SprintfLiteral(buf, "%08x", mTlsFlags);
-+    mHashKey.Replace(18, 8, buf, 8);
++    mHashKey.Replace(18, 8, nsPrintfCString("%08x", mTlsFlags));
 +}
 +
  bool
@@ -1133,7 +1131,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  
 -nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags)
 +nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
-+uint32_t providerTlsFlags)
++                                 uint32_t providerTlsFlags)
    : mFd(nullptr),
      mCertVerificationState(before_cert_verification),
      mSharedState(aState),
@@ -1297,7 +1295,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  public:
 -  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags);
 +  nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags,
-+  uint32_t providerTlsFlags);
++                  uint32_t providerTlsFlags);
  
    NS_DECL_ISUPPORTS_INHERITED
    NS_DECL_NSISSLSOCKETCONTROL
