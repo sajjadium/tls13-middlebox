@@ -1,8 +1,8 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1503094167 25200
-#      Fri Aug 18 15:09:27 2017 -0700
-# Node ID 2b00bebc5b09c94b9512082b751fe56e21e657ed
+# Date 1503095865 25200
+#      Fri Aug 18 15:37:45 2017 -0700
+# Node ID f4d877ff2e18fc5a6b83ed00300eeaa38e5f8d0e
 # Parent  770ed08655c3e760ea6bca170c658751835eaa15
 Bug 1391506 - Creating max version, fallback limit, and alt server hello flag values for the tlsFlags
 
@@ -33,7 +33,7 @@ diff --git a/security/manager/ssl/SharedSSLState.cpp b/security/manager/ssl/Shar
 diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/SharedSSLState.h
 --- a/security/manager/ssl/SharedSSLState.h
 +++ b/security/manager/ssl/SharedSSLState.h
-@@ -14,17 +14,17 @@ class nsClientAuthRememberService;
+@@ -14,17 +14,18 @@ class nsClientAuthRememberService;
  class nsIObserver;
  
  namespace mozilla {
@@ -43,7 +43,8 @@ diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/Shared
  public:
    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedSSLState)
 -  SharedSSLState();
-+  SharedSSLState(uint32_t aTlsFlags = 0);
++  SharedSSLState() : SharedSSLState(0) {}
++  SharedSSLState(uint32_t aTlsFlags);
  
    static void GlobalInit();
    static void GlobalCleanup();
@@ -196,7 +197,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
 diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOLayer.h
 --- a/security/manager/ssl/nsNSSIOLayer.h
 +++ b/security/manager/ssl/nsNSSIOLayer.h
-@@ -163,17 +163,17 @@ private:
+@@ -163,17 +163,18 @@ private:
    uint64_t mPlaintextBytesRead;
  
    nsCOMPtr<nsIX509Cert> mClientCert;
@@ -206,7 +207,8 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  {
  public:
 -  nsSSLIOLayerHelpers();
-+  nsSSLIOLayerHelpers(uint32_t aTlsFlags = 0);
++  nsSSLIOLayerHelpers() : nsSSLIOLayerHelpers(0) {}
++  nsSSLIOLayerHelpers(uint32_t aTlsFlags);
    ~nsSSLIOLayerHelpers();
  
    nsresult Init();
@@ -215,7 +217,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
    static bool nsSSLIOLayerInitialized;
    static PRDescIdentity nsSSLIOLayerIdentity;
    static PRDescIdentity nsSSLPlaintextLayerIdentity;
-@@ -221,16 +221,17 @@ public:
+@@ -221,16 +222,17 @@ public:
    bool isPublic() const;
    void removeInsecureFallbackSite(const nsACString& hostname, uint16_t port);
    bool isInsecureFallbackSite(const nsACString& hostname);
