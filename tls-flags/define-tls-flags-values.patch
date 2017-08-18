@@ -1,60 +1,15 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1503025729 25200
-#      Thu Aug 17 20:08:49 2017 -0700
-# Node ID 6cb9850400425f7ddc02e12f931c7fc8e7702724
+# Date 1503094167 25200
+#      Fri Aug 18 15:09:27 2017 -0700
+# Node ID 2b00bebc5b09c94b9512082b751fe56e21e657ed
 # Parent  770ed08655c3e760ea6bca170c658751835eaa15
 Bug 1391506 - Creating max version, fallback limit, and alt server hello flag values for the tlsFlags
 
-diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
---- a/netwerk/socket/nsISocketProvider.idl
-+++ b/netwerk/socket/nsISocketProvider.idl
-@@ -113,16 +113,41 @@ interface nsISocketProvider : nsISupport
-     const unsigned long MITM_OK = 1 << 3;
- 
-     /**
-      * If set, do not use newer protocol features that might have interop problems
-      * on the Internet. Intended only for use with critical infra like the updater.
-      * default is false.
-      */
-     const unsigned long BE_CONSERVATIVE = 1 << 4;
-+
-+    /**
-+     * Values for the tlsFlags
-+     *
-+     * Setting TLS max version
-+     */
-+    const unsigned long TLS_FLAGS_VERSION_MAX_MASK = (0x7 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_1    = (0x1 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_2    = (0x2 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_3    = (0x3 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_4    = (0x4 << 0);
-+
-+    /**
-+     * Setting TLS fallback limit
-+     */
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK = (0x7 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_1    = (0x1 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_2    = (0x2 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_3    = (0x3 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_4    = (0x4 << 3);
-+
-+    /**
-+     * Enabling Alternative Server Hello
-+     */
-+    const unsigned long TLS_FLAGS_ALT_SERVER_HELLO = (1 << 6);
- };
- 
- %{C++
- /**
-  * nsISocketProvider implementations should be registered with XPCOM under a
-  * contract ID of the form: "@mozilla.org/network/socket;2?type=foo"
-  */
- #define NS_NETWORK_SOCKET_CONTRACTID_PREFIX \
 diff --git a/security/manager/ssl/SharedSSLState.cpp b/security/manager/ssl/SharedSSLState.cpp
 --- a/security/manager/ssl/SharedSSLState.cpp
 +++ b/security/manager/ssl/SharedSSLState.cpp
-@@ -112,22 +112,23 @@ PrivateBrowsingObserver::Observe(nsISupp
+@@ -112,18 +112,19 @@ PrivateBrowsingObserver::Observe(nsISupp
                                   const char16_t *aData)
  {
    if (!nsCRT::strcmp(aTopic, "last-pb-context-exited")) {
@@ -66,18 +21,14 @@ diff --git a/security/manager/ssl/SharedSSLState.cpp b/security/manager/ssl/Shar
 -SharedSSLState::SharedSSLState()
 +SharedSSLState::SharedSSLState(uint32_t aTlsFlags)
  : mClientAuthRemember(new nsClientAuthRememberService)
++, mIOLayerHelpers(aTlsFlags)
  , mMutex("SharedSSLState::mMutex")
  , mSocketCreated(false)
  , mOCSPStaplingEnabled(false)
  , mOCSPMustStapleEnabled(false)
-+, mIOLayerHelpers(aTlsFlags)
  {
    mIOLayerHelpers.Init();
    mClientAuthRemember->Init();
- }
- 
- SharedSSLState::~SharedSSLState()
- {
  }
 diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/SharedSSLState.h
 --- a/security/manager/ssl/SharedSSLState.h
@@ -146,7 +97,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  {
    MOZ_ASSERT_UNREACHABLE("I/O method is invalid");
    PR_SetError(PR_INVALID_METHOD_ERROR, 0);
-@@ -1674,16 +1676,21 @@ nsSSLIOLayerHelpers::Init()
+@@ -1674,16 +1676,22 @@ nsSSLIOLayerHelpers::Init()
  }
  
  void
@@ -157,8 +108,9 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
                                          3); // 3 = TLS 1.2
 +
 +  // set fallback limit if it is set in the tls flags
-+  if (mTlsFlags & nsISocketProvider::TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK)
-+    limit = (mTlsFlags & nsISocketProvider::TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK) >> 3;
++  uint32_t tlsFlagsFallbackLimit = (mTlsFlags & (7 << 3)) >> 3;
++  if (tlsFlagsFallbackLimit)
++    limit = tlsFlagsFallbackLimit;
 +
    SSLVersionRange defaults = { SSL_LIBRARY_VERSION_TLS_1_2,
                                 SSL_LIBRARY_VERSION_TLS_1_2 };
@@ -168,7 +120,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      filledInRange.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
  
-@@ -2430,17 +2437,45 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+@@ -2430,17 +2438,45 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      }
    }
  
@@ -179,7 +131,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  
 -  // Use infoObject->GetProviderTlsFlags() to get the TLS flags
 +  // setting TLS max version
-+  switch((infoObject->GetProviderTlsFlags() & nsISocketProvider::TLS_FLAGS_VERSION_MAX_MASK) >> 0) {
++  switch(infoObject->GetProviderTlsFlags() & 7) {
 +    case 0:
 +      // the default value will be used
 +      break;
@@ -202,7 +154,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
 +  }
 +  
 +  // enabling alternative server hello
-+  if (infoObject->GetProviderTlsFlags() & nsISocketProvider::TLS_FLAGS_ALT_SERVER_HELLO) {
++  if (infoObject->GetProviderTlsFlags() & (1 << 6)) {
 +    if (SECSuccess != SSL_UseAltServerHelloType(fd, PR_TRUE)) {
 +      return NS_ERROR_FAILURE;
 +    }
@@ -215,7 +167,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
               fd));
      range.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
-@@ -2563,18 +2598,23 @@ nsSSLIOLayerAddToSocket(int32_t family,
+@@ -2563,18 +2599,23 @@ nsSSLIOLayerAddToSocket(int32_t family,
                          uint32_t providerTlsFlags)
  {
    nsNSSShutDownPreventionLock locker;
