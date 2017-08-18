@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "certDB", "@mozilla.org/security/x509ce
 XPCOMUtils.defineLazyServiceGetter(this, "uuidGenerator", "@mozilla.org/uuid-generator;1", "nsIUUIDGenerator");
 
 const VERSION_MAX_PREF = "security.tls.version.max";
-const FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
+const VERSION_FALLBACK_LIMIT_PREF = "security.tls.version.fallback-limit";
 
 const CERT_USAGE_SSL_CLIENT      = 0x0001;
 const CERT_USAGE_SSL_SERVER      = 0x0002;
@@ -20,7 +20,7 @@ const CERT_USAGE_EMAIL_SIGNER    = 0x0010;
 const CERT_USAGE_EMAIL_RECIPIENT = 0x0020;
 const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
 
-const REPEAT_COUNT = 5;
+const REPEAT_COUNT = 1;
 
 const XHR_TIMEOUT = 10000;
 
@@ -28,10 +28,27 @@ const TELEMETRY_PING_NAME = "tls13-middlebox-tls-flags";
 
 // all combination of configurations we care about.
 let configurations = [
-  {maxVersion: 4, fallbackLimit: 4, website: "https://enabled.tls13.com"},
-  {maxVersion: 4, fallbackLimit: 4, website: "https://disabled.tls13.com"},
-  {maxVersion: 3, fallbackLimit: 3, website: "https://control.tls12.com"},
-  {maxVersion: 3, fallbackLimit: 3, website: "http://tls12.com"}
+  // {versionMax: 4, versionFallbackLimit: 4, website: "https://enabled.tls13.com"},
+  // {versionMax: 1, versionFallbackLimit: 4, website: "https://disabled.tls13.com"},
+  // {versionMax: 1, versionFallbackLimit: 4, website: "https://control.tls12.com"},
+  // {versionMax: 0, versionFallbackLimit: 0, website: "http://tls12.com"}
+  {versionMax: 4, versionFallbackLimit: 3, website: "https://www.tls13.facebook.com"}
+];
+
+let version_max_flags = [
+  0,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_MAX_1,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_MAX_2,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_MAX_3,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_MAX_4
+];
+
+let version_fallback_limit_flags = [
+  0,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_FALLBACK_LIMIT_1,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_FALLBACK_LIMIT_2,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_FALLBACK_LIMIT_3,
+  Ci.nsISocketProvider.TLS_FLAGS_VERSION_FALLBACK_LIMIT_4
 ];
 
 let probe_id = null;
@@ -171,6 +188,9 @@ function makeRequest(config) {
 
       xhr.channel.QueryInterface(Ci.nsIHttpChannelInternal);
       xhr.channel.tlsFlags = 0;
+      xhr.channel.tlsFlags |= version_max_flags[config.versionMax];
+      xhr.channel.tlsFlags |= version_fallback_limit_flags[config.versionFallbackLimit];
+      xhr.channel.tlsFlags |= Ci.nsISocketProvider.TLS_FLAGS_ALT_SERVER_HELLO;
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
@@ -260,8 +280,8 @@ function install() {
       let prefs = new Preferences();
 
       let final_output = {
-        "defaultMaxVersion": prefs.get(VERSION_MAX_PREF),
-        "defaultFallbackLimit": prefs.get(FALLBACK_LIMIT_PREF),
+        "defaultVersionMax": prefs.get(VERSION_MAX_PREF),
+        "defaultVersionFallbackLimit": prefs.get(VERSION_FALLBACK_LIMIT_PREF),
         "tests": tests_result
       };
 
