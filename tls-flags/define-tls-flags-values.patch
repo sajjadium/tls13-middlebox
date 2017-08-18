@@ -1,8 +1,8 @@
 # HG changeset patch
 # User Sajjad Arshad <sarshad@mozilla.com>
-# Date 1503095865 25200
-#      Fri Aug 18 15:37:45 2017 -0700
-# Node ID f4d877ff2e18fc5a6b83ed00300eeaa38e5f8d0e
+# Date 1503097342 25200
+#      Fri Aug 18 16:02:22 2017 -0700
+# Node ID b7d09d86b7fff8443890811e0e93dbc2ec5e0aed
 # Parent  770ed08655c3e760ea6bca170c658751835eaa15
 Bug 1391506 - Creating max version, fallback limit, and alt server hello flag values for the tlsFlags
 
@@ -44,7 +44,7 @@ diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/Shared
    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedSSLState)
 -  SharedSSLState();
 +  SharedSSLState() : SharedSSLState(0) {}
-+  SharedSSLState(uint32_t aTlsFlags);
++  explicit SharedSSLState(uint32_t aTlsFlags);
  
    static void GlobalInit();
    static void GlobalCleanup();
@@ -208,7 +208,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  public:
 -  nsSSLIOLayerHelpers();
 +  nsSSLIOLayerHelpers() : nsSSLIOLayerHelpers(0) {}
-+  nsSSLIOLayerHelpers(uint32_t aTlsFlags);
++  explicit nsSSLIOLayerHelpers(uint32_t aTlsFlags);
    ~nsSSLIOLayerHelpers();
  
    nsresult Init();
