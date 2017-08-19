@@ -174,7 +174,7 @@ function makeRequest(config) {
       xhr.channel.tlsFlags = 0;
       xhr.channel.tlsFlags |= (config.versionMax << 0);
       xhr.channel.tlsFlags |= (config.versionFallbackLimit << 3);
-      xhr.channel.tlsFlags |= (1 << 6);
+      // xhr.channel.tlsFlags |= (1 << 6);
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
