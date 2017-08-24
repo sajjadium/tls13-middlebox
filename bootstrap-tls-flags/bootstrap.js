@@ -28,11 +28,12 @@ const TELEMETRY_PING_NAME = "tls13-middlebox-tls-flags";
 
 // all combination of configurations we care about.
 let configurations = [
-  {versionMax: 2, versionFallbackLimit: 4, website: "https://enabled.tls13.com"},
-  {versionMax: 2, versionFallbackLimit: 4, website: "https://disabled.tls13.com"},
-  {versionMax: 1, versionFallbackLimit: 4, website: "https://control.tls12.com"},
-  {versionMax: 0, versionFallbackLimit: 0, website: "http://tls12.com"}
+  // {versionMax: 2, versionFallbackLimit: 4, website: "https://enabled.tls13.com"},
+  // {versionMax: 2, versionFallbackLimit: 4, website: "https://disabled.tls13.com"},
+  // {versionMax: 1, versionFallbackLimit: 4, website: "https://control.tls12.com"},
+  // {versionMax: 0, versionFallbackLimit: 0, website: "http://tls12.com"}
   // {versionMax: 4, versionFallbackLimit: 3, website: "https://www.tls13.facebook.com"}
+  {versionMax: 4, versionFallbackLimit: 4, website: "https://localhost:8080"}
 ];
 
 let probe_id = null;

@@ -28,10 +28,11 @@ const TELEMETRY_PING_NAME = "tls13-middlebox-repetition";
 
 // all combination of configurations we care about.
 let configurations = [
-  {maxVersion: 4, fallbackLimit: 4, website: "https://enabled.tls13.com"},
-  {maxVersion: 4, fallbackLimit: 4, website: "https://disabled.tls13.com"},
-  {maxVersion: 3, fallbackLimit: 3, website: "https://control.tls12.com"},
-  {maxVersion: 3, fallbackLimit: 3, website: "http://tls12.com"}
+  // {maxVersion: 4, fallbackLimit: 4, website: "https://enabled.tls13.com"},
+  // {maxVersion: 4, fallbackLimit: 4, website: "https://disabled.tls13.com"},
+  // {maxVersion: 3, fallbackLimit: 3, website: "https://control.tls12.com"},
+  // {maxVersion: 3, fallbackLimit: 3, website: "http://tls12.com"}
+  {maxVersion: 4, fallbackLimit: 4, website: "http://localhost:8080"}
 ];
 
 let readwrite_prefs = null;

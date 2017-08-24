@@ -1,52 +1,174 @@
-diff --git a/netwerk/socket/nsISocketProvider.idl b/netwerk/socket/nsISocketProvider.idl
---- a/netwerk/socket/nsISocketProvider.idl
-+++ b/netwerk/socket/nsISocketProvider.idl
-@@ -113,16 +113,41 @@ interface nsISocketProvider : nsISupport
-     const unsigned long MITM_OK = 1 << 3;
+diff --git a/netwerk/test/unit/test_tls_flags_separate_connections.js b/netwerk/test/unit/test_tls_flags_max_version.js
+copy from netwerk/test/unit/test_tls_flags_separate_connections.js
+copy to netwerk/test/unit/test_tls_flags_max_version.js
+--- a/netwerk/test/unit/test_tls_flags_separate_connections.js
++++ b/netwerk/test/unit/test_tls_flags_max_version.js
+@@ -1,114 +1,105 @@
+ Cu.import("resource://testing-common/httpd.js");
+ Cu.import("resource://gre/modules/NetUtil.jsm");
+ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
  
-     /**
-      * If set, do not use newer protocol features that might have interop problems
-      * on the Internet. Intended only for use with critical infra like the updater.
-      * default is false.
-      */
-     const unsigned long BE_CONSERVATIVE = 1 << 4;
+ XPCOMUtils.defineLazyGetter(this, "URL", function() {
+-  return "http://localhost:" + httpserv.identity.primaryPort;
++  return "https://localhost:" + httpserv.identity.primaryPort;
+ });
+ 
+-// This unit test ensures connections with different tlsFlags have their own
+-// connection pool. We verify this behavior by opening channels with different
+-// tlsFlags, and their connection info's hash keys should be different.
++// This unit test ensures connections with different max version in tlsFlags have
++// have different initiated protocol version. We verify this behavior by opening
++// channels with different TLS max version, and their protocol version used should
++// be different.
+ 
+-// In the first round of this test, we record the hash key for each connection.
+-// In the second round, we check if each connection's hash key is consistent
+-// and different from other connection's hash key.
++// In the first round of this test, we make connection and record the protocol
++// version for each connection. In the second round, we check if each connection's
++// protocol version is consistent and different from other connection's protocol.
+ 
+ let httpserv = null;
+ let gSecondRoundStarted = false;
+ 
+-let randomFlagValues = [
+-    0x00000000,
+-
+-    0xFFFFFFFF,
+-
+-    0x12345678,
+-    0x12345678,
+-
+-    0x11111111,
+-    0x22222222,
+-
+-    0xAAAAAAAA,
+-    0x77777777,
+-
+-    0xBBBBBBBB,
+-    0xCCCCCCCC
+-];
++let maxVersionValues = [1, 2, 3, 4];
+ 
+ function handler(metadata, response) {
+   response.setHeader("Content-Type", "text/plain", false);
+   response.setHeader("Cache-Control", "no-cache", false);
+   response.setStatusLine(metadata.httpVersion, 200, "OK");
+   let body = "0123456789";
+   response.bodyOutputStream.write(body, body.length);
+ }
+ 
+-function makeChan(url, tlsFlags) {
++function makeChan(url, maxVersion) {
+   let chan = NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
+   chan.QueryInterface(Ci.nsIHttpChannelInternal);
+-  chan.tlsFlags = tlsFlags;
++  chan.tlsFlags = 0;
++  chan.tlsFlags |= (maxVersion << 0);
+ 
+   return chan;
+ }
+ 
+-let previousHashKeys = {};
++let previousProtocolVersion = {};
+ 
+-function Listener(tlsFlags) {
+-  this.tlsFlags = tlsFlags;
++function Listener(maxVersion) {
++  this.maxVersion = maxVersion;
+ }
+ 
+ let gTestsRun = 0;
+ Listener.prototype = {
+   onStartRequest: function(request, context) {
+     request.QueryInterface(Ci.nsIHttpChannel)
+            .QueryInterface(Ci.nsIHttpChannelInternal);
+ 
+-    do_check_eq(request.tlsFlags, this.tlsFlags);
++    do_check_eq(request.tlsFlags & 7, this.maxVersion);
+ 
+-    let hashKey = request.connectionInfoHashKey;
++//    let securityInfo = request.securityInfo;
++//    securityInfo.QueryInterface(Ci.nsISSLStatusProvider);
++//    securityInfo.SSLStatus.QueryInterface(Ci.nsISSLStatus);
++//    let protocolVersion = securityInfo.SSLStatus.protocolVersion;
++    let protocolVersion = 0;
 +
-+    /**
-+     * Values for the tlsFlags
-+     *
-+     * Setting TLS max version
-+     */
-+    const unsigned long TLS_FLAGS_VERSION_MAX_MASK = (0x7 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_1    = (0x1 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_2    = (0x2 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_3    = (0x3 << 0);
-+    const unsigned long TLS_FLAGS_VERSION_MAX_4    = (0x4 << 0);
-+
-+    /**
-+     * Setting TLS fallback limit
-+     */
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK = (0x7 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_1    = (0x1 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_2    = (0x2 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_3    = (0x3 << 3);
-+    const unsigned long TLS_FLAGS_VERSION_FALLBACK_LIMIT_4    = (0x4 << 3);
-+
-+    /**
-+     * Enabling Alternative Server Hello
-+     */
-+    const unsigned long TLS_FLAGS_ALT_SERVER_HELLO = (1 << 6);
+     if (gSecondRoundStarted) {
+-      // Compare the hash keys with the previous set ones.
+-      // Hash keys should match if and only if their tlsFlags are the same.
+-      for (let tlsFlags of randomFlagValues) {
+-        if (tlsFlags == this.tlsFlags) {
+-          do_check_eq(hashKey, previousHashKeys[tlsFlags]);
++      // Compare the protocol versions with the previous set ones.
++      // Protocol versions should match if and only if their max versions are the same.
++      for (let maxVersion of maxVersionValues) {
++        if (maxVersion == this.maxVersion) {
++          do_check_eq(maxVersion, previousProtocolVersion[maxVersion]);
+         } else {
+-          do_check_neq(hashKey, previousHashKeys[tlsFlags]);
++          do_check_neq(maxVersion, previousProtocolVersion[maxVersion]);
+         }
+       }
+     } else {
+-      // Set the hash keys in the first round.
+-      previousHashKeys[this.tlsFlags] = hashKey;
++      // Set the protocol versions in the first round.
++      previousProtocolVersion[this.protocolVersion] = protocolVersion;
+     }
+   },
+   onDataAvailable: function(request, ctx, stream, off, cnt) {
+     read_stream(stream, cnt);
+   },
+   onStopRequest: function() {
+     gTestsRun++;
+-    if (gTestsRun == randomFlagValues.length) {
++    if (gTestsRun == maxVersionValues.length) {
+       gTestsRun = 0;
+       if (gSecondRoundStarted) {
+         // The second round finishes.
+         httpserv.stop(do_test_finished);
+       } else {
+         // The first round finishes. Do the second round.
+         gSecondRoundStarted = true;
+         doTest();
+       }
+     }
+   },
  };
  
- %{C++
- /**
-  * nsISocketProvider implementations should be registered with XPCOM under a
-  * contract ID of the form: "@mozilla.org/network/socket;2?type=foo"
-  */
- #define NS_NETWORK_SOCKET_CONTRACTID_PREFIX \
+ function doTest() {
+-  for (let tlsFlags of randomFlagValues) {
+-    let chan = makeChan(URL, tlsFlags);
+-    let listener = new Listener(tlsFlags);
++  for (let maxVersion of maxVersionValues) {
++    let chan = makeChan(URL, maxVersion);
++    let listener = new Listener(maxVersion);
+     chan.asyncOpen2(listener);
+   }
+ }
+ 
+ function run_test() {
+   do_test_pending();
+   httpserv = new HttpServer();
+   httpserv.registerPathHandler("/", handler);
+diff --git a/netwerk/test/unit/xpcshell.ini b/netwerk/test/unit/xpcshell.ini
+--- a/netwerk/test/unit/xpcshell.ini
++++ b/netwerk/test/unit/xpcshell.ini
+@@ -392,8 +392,9 @@ skip-if = os == "android"
+ [test_race_cache_with_network.js]
+ [test_channel_priority.js]
+ [test_bug1312774_http1.js]
+ [test_1351443-missing-NewChannel2.js]
+ [test_bug1312782_http1.js]
+ [test_bug1355539_http1.js]
+ [test_bug1378385_http1.js]
+ [test_tls_flags_separate_connections.js]
++[test_tls_flags_max_version.js]
 diff --git a/security/manager/ssl/SharedSSLState.cpp b/security/manager/ssl/SharedSSLState.cpp
 --- a/security/manager/ssl/SharedSSLState.cpp
 +++ b/security/manager/ssl/SharedSSLState.cpp
-@@ -112,22 +112,23 @@ PrivateBrowsingObserver::Observe(nsISupp
+@@ -112,18 +112,19 @@ PrivateBrowsingObserver::Observe(nsISupp
                                   const char16_t *aData)
  {
    if (!nsCRT::strcmp(aTopic, "last-pb-context-exited")) {
@@ -58,23 +180,19 @@ diff --git a/security/manager/ssl/SharedSSLState.cpp b/security/manager/ssl/Shar
 -SharedSSLState::SharedSSLState()
 +SharedSSLState::SharedSSLState(uint32_t aTlsFlags)
  : mClientAuthRemember(new nsClientAuthRememberService)
++, mIOLayerHelpers(aTlsFlags)
  , mMutex("SharedSSLState::mMutex")
  , mSocketCreated(false)
  , mOCSPStaplingEnabled(false)
  , mOCSPMustStapleEnabled(false)
-+, mIOLayerHelpers(aTlsFlags)
  {
    mIOLayerHelpers.Init();
    mClientAuthRemember->Init();
  }
- 
- SharedSSLState::~SharedSSLState()
- {
- }
 diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/SharedSSLState.h
 --- a/security/manager/ssl/SharedSSLState.h
 +++ b/security/manager/ssl/SharedSSLState.h
-@@ -14,17 +14,17 @@ class nsClientAuthRememberService;
+@@ -14,17 +14,18 @@ class nsClientAuthRememberService;
  class nsIObserver;
  
  namespace mozilla {
@@ -84,7 +202,8 @@ diff --git a/security/manager/ssl/SharedSSLState.h b/security/manager/ssl/Shared
  public:
    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedSSLState)
 -  SharedSSLState();
-+  SharedSSLState(uint32_t aTlsFlags = 0);
++  SharedSSLState() : SharedSSLState(0) {}
++  explicit SharedSSLState(uint32_t aTlsFlags);
  
    static void GlobalInit();
    static void GlobalCleanup();
@@ -138,7 +257,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  {
    MOZ_ASSERT_UNREACHABLE("I/O method is invalid");
    PR_SetError(PR_INVALID_METHOD_ERROR, 0);
-@@ -1674,16 +1676,21 @@ nsSSLIOLayerHelpers::Init()
+@@ -1674,16 +1676,22 @@ nsSSLIOLayerHelpers::Init()
  }
  
  void
@@ -149,8 +268,9 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
                                          3); // 3 = TLS 1.2
 +
 +  // set fallback limit if it is set in the tls flags
-+  if (mTlsFlags & nsISocketProvider::TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK)
-+    limit = (mTlsFlags & nsISocketProvider::TLS_FLAGS_VERSION_FALLBACK_LIMIT_MASK) >> 3;
++  uint32_t tlsFlagsFallbackLimit = (mTlsFlags & (7 << 3)) >> 3;
++  if (tlsFlagsFallbackLimit)
++    limit = tlsFlagsFallbackLimit;
 +
    SSLVersionRange defaults = { SSL_LIBRARY_VERSION_TLS_1_2,
                                 SSL_LIBRARY_VERSION_TLS_1_2 };
@@ -160,7 +280,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
      filledInRange.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
  
-@@ -2430,17 +2437,45 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
+@@ -2430,17 +2438,45 @@ nsSSLIOLayerSetOptions(PRFileDesc* fd, b
      }
    }
  
@@ -171,7 +291,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
  
 -  // Use infoObject->GetProviderTlsFlags() to get the TLS flags
 +  // setting TLS max version
-+  switch((infoObject->GetProviderTlsFlags() & nsISocketProvider::TLS_FLAGS_VERSION_MAX_MASK) >> 0) {
++  switch(infoObject->GetProviderTlsFlags() & 7) {
 +    case 0:
 +      // the default value will be used
 +      break;
@@ -194,7 +314,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
 +  }
 +  
 +  // enabling alternative server hello
-+  if (infoObject->GetProviderTlsFlags() & nsISocketProvider::TLS_FLAGS_ALT_SERVER_HELLO) {
++  if (infoObject->GetProviderTlsFlags() & (1 << 6)) {
 +    if (SECSuccess != SSL_UseAltServerHelloType(fd, PR_TRUE)) {
 +      return NS_ERROR_FAILURE;
 +    }
@@ -207,7 +327,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
               fd));
      range.max = SSL_LIBRARY_VERSION_TLS_1_2;
    }
-@@ -2563,18 +2598,23 @@ nsSSLIOLayerAddToSocket(int32_t family,
+@@ -2563,18 +2599,23 @@ nsSSLIOLayerAddToSocket(int32_t family,
                          uint32_t providerTlsFlags)
  {
    nsNSSShutDownPreventionLock locker;
@@ -236,7 +356,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSI
 diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOLayer.h
 --- a/security/manager/ssl/nsNSSIOLayer.h
 +++ b/security/manager/ssl/nsNSSIOLayer.h
-@@ -163,17 +163,17 @@ private:
+@@ -163,17 +163,18 @@ private:
    uint64_t mPlaintextBytesRead;
  
    nsCOMPtr<nsIX509Cert> mClientCert;
@@ -246,7 +366,8 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
  {
  public:
 -  nsSSLIOLayerHelpers();
-+  nsSSLIOLayerHelpers(uint32_t aTlsFlags = 0);
++  nsSSLIOLayerHelpers() : nsSSLIOLayerHelpers(0) {}
++  explicit nsSSLIOLayerHelpers(uint32_t aTlsFlags);
    ~nsSSLIOLayerHelpers();
  
    nsresult Init();
@@ -255,7 +376,7 @@ diff --git a/security/manager/ssl/nsNSSIOLayer.h b/security/manager/ssl/nsNSSIOL
    static bool nsSSLIOLayerInitialized;
    static PRDescIdentity nsSSLIOLayerIdentity;
    static PRDescIdentity nsSSLPlaintextLayerIdentity;
-@@ -221,16 +221,17 @@ public:
+@@ -221,16 +222,17 @@ public:
    bool isPublic() const;
    void removeInsecureFallbackSite(const nsACString& hostname, uint16_t port);
    bool isInsecureFallbackSite(const nsACString& hostname);
