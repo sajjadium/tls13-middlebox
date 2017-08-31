@@ -20,7 +20,7 @@ const CERT_USAGE_EMAIL_SIGNER    = 0x0010;
 const CERT_USAGE_EMAIL_RECIPIENT = 0x0020;
 const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
 
-const REPEAT_COUNT = 5;
+const REPEAT_COUNT = 1;
 
 const XHR_TIMEOUT = 10000;
 
@@ -28,12 +28,10 @@ const TELEMETRY_PING_NAME = "tls13-middlebox-tls-flags";
 
 // all combination of configurations we care about.
 let configurations = [
-  // {versionMax: 2, versionFallbackLimit: 4, website: "https://enabled.tls13.com"},
-  // {versionMax: 2, versionFallbackLimit: 4, website: "https://disabled.tls13.com"},
-  // {versionMax: 1, versionFallbackLimit: 4, website: "https://control.tls12.com"},
-  // {versionMax: 0, versionFallbackLimit: 0, website: "http://tls12.com"}
-  // {versionMax: 4, versionFallbackLimit: 3, website: "https://www.tls13.facebook.com"}
-  {versionMax: 4, versionFallbackLimit: 4, website: "https://localhost:8080"}
+  {versionMax: 4, versionFallbackLimit: 4, website: "https://enabled.tls13.com"},
+  {versionMax: 4, versionFallbackLimit: 4, website: "https://disabled.tls13.com"},
+  {versionMax: 3, versionFallbackLimit: 3, website: "https://control.tls12.com"},
+  {versionMax: 3, versionFallbackLimit: 3, website: "http://tls12.com"}
 ];
 
 let probe_id = null;
@@ -175,7 +173,6 @@ function makeRequest(config) {
       xhr.channel.tlsFlags = 0;
       xhr.channel.tlsFlags |= (config.versionMax << 0);
       xhr.channel.tlsFlags |= (config.versionFallbackLimit << 3);
-      // xhr.channel.tlsFlags |= (1 << 6);
 
       xhr.addEventListener("load", e => {
         reportResult("load", e.target);
