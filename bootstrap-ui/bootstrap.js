@@ -14,7 +14,7 @@ const CERT_USAGE_OBJECT_SIGNER   = 0x0040;
 
 const XHR_TIMEOUT = 10000;
 
-const TELEMETRY_PING_NAME = "tls13-middlebox-testing";
+const TELEMETRY_PING_NAME = "tls13-middlebox-ui-testing";
 
 let {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 

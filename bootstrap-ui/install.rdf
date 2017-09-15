@@ -12,8 +12,8 @@
     <em:targetApplication>
       <Description>
         <em:id>{aa3c5121-dab2-40e2-81ca-7ea25febc110}</em:id>
-        <em:minVersion>54</em:minVersion>
-        <em:maxVersion>55.*</em:maxVersion>
+        <em:minVersion>50.*</em:minVersion>
+        <em:maxVersion>60.*</em:maxVersion>
       </Description>
     </em:targetApplication>
 
@@ -21,8 +21,8 @@
     <em:targetApplication>
       <Description>
         <em:id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</em:id>
-        <em:minVersion>54</em:minVersion>
-        <em:maxVersion>55.*</em:maxVersion>
+        <em:minVersion>50.*</em:minVersion>
+        <em:maxVersion>60.*</em:maxVersion>
       </Description>
     </em:targetApplication>
 
